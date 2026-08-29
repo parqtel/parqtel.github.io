@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FAQ &amp; Glossary · Parqtel Docs</title>
+  <meta name="description" content="Frequently asked questions about Parqtel — how it compares to Prometheus/Loki, production readiness, tracing, backups, MCP — plus a glossary of terms.">
+  <link rel="icon" href="../assets/img/logo.svg">
+  <link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel <small>Docs</small></a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="architecture.html">Architecture</a>
+        <a href="getting-started.html">Get Started</a>
+        <a href="deployment.html">Deploy</a>
+        <a href="mcp.html">MCP</a>
+        <a href="api.html">API</a>
+        <a href="screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="sidebar">
+      <div class="group-label">Reference</div>
+      <a href="api.html">API Reference</a>
+      <a href="query-functions.html">Query Functions</a>
+      <a href="mcp.html">MCP Servers</a>
+      <a href="faq.html">FAQ &amp; Glossary</a>
+      <div class="group-label">FAQ</div>
+      <a href="faq.html#what">What is Parqtel?</a>
+      <a href="faq.html#compare">How does it compare?</a>
+      <a href="faq.html#prod">Production ready?</a>
+      <a href="faq.html#tracing">Tracing support</a>
+      <a href="faq.html#backup">Backups</a>
+      <a href="faq.html#mcp">MCP needs</a>
+      <div class="group-label">Glossary</div>
+      <a href="faq.html#glossary">Terms</a>
+      <div class="group-label">Learn</div>
+      <a href="architecture.html">Architecture</a>
+      <a href="getting-started.html">Get Started</a>
+      <a href="deployment.html">Deployment</a>
+          <div class="group-label">UI</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API Explorer</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>FAQ &amp; Glossary</h1>
+      <p class="lead">Common questions about Parqtel, plus the terms used throughout the docs.</p>
+
+      <h2 id="what">What is Parqtel?</h2>
+      <p>Parqtel is a single-binary, Rust-based observability backend. It ingests OpenTelemetry metrics, logs, and traces and stores them as compressed Apache Parquet, exposing a Prometheus-compatible query API, a Grafana SimpleJSON datasource, a built-in web UI, an alerting engine, and 7 AI-native MCP servers.</p>
+
+      <h2 id="compare">How does it compare to Prometheus / Loki / VictoriaMetrics?</h2>
+      <table>
+        <thead><tr><th>Dimension</th><th>Parqtel</th><th>Time-series TSDBs</th></tr></thead>
+        <tbody>
+          <tr><td>Storage</td><td>Columnar Parquet (10–20× compression)</td><td>Custom TSDB (Prometheus) or LSM (VictoriaMetrics)</td></tr>
+          <tr><td>Footprint</td><td>~15&nbsp;MB distroless image, no external store</td><td>Often larger; may need sidecars/stateful sets</td></tr>
+          <tr><td>Signals</td><td>Metrics + logs + traces in one engine</td><td>Usually separate systems (Prometheus + Loki)</td></tr>
+          <tr><td>Query</td><td>PromQL-compatible subset</td><td>Full PromQL</td></tr>
+          <tr><td>Best at</td><td>Cheap, long-lived, edge/archival telemetry</td><td>Low-latency real-time alerting at scale</td></tr>
+        </tbody>
+      </table>
+      <div class="callout info"><div class="c-ic">ℹ</div><div><p>Parqtel is complementary: point Grafana at it as a long-term, low-cost store while keeping your real-time stack.</p></div></div>
+
+      <h2 id="prod">Is it production ready?</h2>
+      <p>The engine is built for production constraints: no <code class="inline">unsafe</code> code, clippy-denied panics, crash-safe Parquet writes, graceful shutdown, and a supply chain that is Trivy-scanned, cosign-signed, and OpenSSF Scorecard tracked. It is young software — validate against your retention, cardinality, and query patterns before relying on it for primary alerting.</p>
+
+      <h2 id="tracing">Does it support tracing?</h2>
+      <p>Yes — traces are ingested over OTLP (<code class="inline">/v1/traces</code>, protobuf or JSON) and viewable in the built-in <code class="inline">/ui</code> trace waterfall. Trace storage shares the same block model as metrics and logs.</p>
+
+      <h2 id="backup">How do I back up Parqtel?</h2>
+      <p>Blocks are immutable once written, so they can be copied or snapshotted while the server runs. Back up <code class="inline">index.bin</code> for fast recovery; without it, the index rebuilds from the Parquet files on startup. See <a href="deployment.html#production">production notes</a>.</p>
+
+      <h2 id="mcp">What do I need for MCP?</h2>
+      <p>Run the relevant <code class="inline">parqtel-mcp-*</code> binary with its API token (e.g. <code class="inline">SLACK_BOT_TOKEN</code>). Each server is independent and exposes <code class="inline">/health</code>. Point your LLM client's MCP configuration at the server's URL/port. See the <a href="mcp.html">MCP guide</a>.</p>
+
+      <h2 id="glossary">Glossary</h2>
+      <table>
+        <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>OTLP</td><td>OpenTelemetry Protocol — the wire format for metrics, logs, and traces.</td></tr>
+          <tr><td>Block</td><td>A self-contained Parquet file for a fixed time window (2h metrics, 30m logs).</td></tr>
+          <tr><td>Row group</td><td>A horizontal slice of a Parquet block; carries min/max stats used for pruning.</td></tr>
+          <tr><td>Compaction</td><td>Merging small blocks into larger ones (hourly) for fewer, fatter files.</td></tr>
+          <tr><td>Retention</td><td>Time-to-live per signal; expired blocks are evicted.</td></tr>
+          <tr><td>Memory buffer</td><td>Indexed in-memory store making the most recent data queryable in ~1.7ms.</td></tr>
+          <tr><td>Recording rule</td><td>A precomputed PromQL expression materialized as a new series.</td></tr>
+          <tr><td>MCP</td><td>Model Context Protocol — JSON-RPC standard letting LLMs call external tools.</td></tr>
+          <tr><td>SimpleJSON</td><td>Grafana datasource plugin protocol Parqtel implements.</td></tr>
+        </tbody>
+      </table>
+      <div class="callout"><div class="c-ic">↗</div><div><p>More questions? Open a discussion on <a href="https://github.com/parqtel/parqtel-oss">GitHub</a>.</p></div></div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
+        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="query-functions.html">Query Functions</a><a href="screenshots.html">UI Screenshots</a><a href="api-explorer.html">API Explorer</a></div>
+        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
+        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+    </div>
+  </footer>
+  <script src="../assets/js/site.js"></script>
+</body>
+</html>

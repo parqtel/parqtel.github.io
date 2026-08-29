@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 200" font-family="-apple-system,Segoe UI,Roboto,sans-serif" role="img" aria-label="AI-driven incident response flow with Parqtel MCP servers">
+  <defs>
+    <marker id="m" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9z" fill="#7c5cff"/></marker>
+  </defs>
+  <g font-size="11.5" font-weight="650" fill="#0e1424" text-anchor="middle">
+    <rect x="14"  y="70" width="150" height="60" rx="11" fill="#fff" stroke="#d3d7e4"/>
+    <text x="89"  y="98">1 · Alert fires</text>
+    <text x="89"  y="115" font-size="9.5" fill="#5a6478">rule → Firing</text>
+
+    <rect x="190" y="70" width="150" height="60" rx="11" fill="#7c5cff" fill-opacity="0.10" stroke="#7c5cff"/>
+    <text x="265" y="98">2 · Notify</text>
+    <text x="265" y="115" font-size="9.5" fill="#5a6478">Slack · PagerDuty</text>
+
+    <rect x="366" y="70" width="150" height="60" rx="11" fill="#fff" stroke="#d3d7e4"/>
+    <text x="441" y="98">3 · Investigate</text>
+    <text x="441" y="115" font-size="9.5" fill="#5a6478">metrics · logs</text>
+
+    <rect x="542" y="70" width="150" height="60" rx="11" fill="#fff" stroke="#d3d7e4"/>
+    <text x="617" y="98">4 · RCA</text>
+    <text x="617" y="115" font-size="9.5" fill="#5a6478">LLM analysis</text>
+
+    <rect x="718" y="70" width="150" height="60" rx="11" fill="#18b6ff" fill-opacity="0.12" stroke="#18b6ff"/>
+    <text x="793" y="98">5 · Resolve</text>
+    <text x="793" y="115" font-size="9.5" fill="#5a6478">ack · close</text>
+
+    <rect x="876" y="70" width="110" height="60" rx="11" fill="#fff" stroke="#d3d7e4"/>
+    <text x="931" y="98">6 · Post</text>
+    <text x="931" y="115" font-size="9.5" fill="#5a6478">Notion · GDocs</text>
+  </g>
+  <g fill="none" stroke="#7c5cff" stroke-width="2.5" marker-end="url(#m)">
+    <path d="M164 100 H188"/>
+    <path d="M340 100 H364"/>
+    <path d="M516 100 H540"/>
+    <path d="M692 100 H716"/>
+    <path d="M868 100 H874"/>
+  </g>
+  <text x="500" y="172" text-anchor="middle" font-size="11" fill="#8a93a6">Parqtel’s 7 MCP servers give the LLM direct, typed tool access to every system in the loop — no glue code.</text>
+</svg>

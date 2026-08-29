@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parqtel — Ultra-lightweight SRE Observability Engine</title>
+  <meta name="description" content="Parqtel is a single-binary, Rust-based observability backend that streams OpenTelemetry metrics, logs, and traces into compressed Apache Parquet — with a Prometheus-compatible query API, Grafana datasource, alerting, and 7 AI-native MCP servers.">
+  <meta property="og:title" content="Parqtel — Ultra-lightweight SRE Observability Engine">
+  <meta property="og:description" content="Stream OTel metrics, logs, and traces into compressed Parquet. Prometheus-compatible, ~15MB image, 7 MCP servers for AI incident response.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/img/architecture.svg">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <img class="logo" src="assets/img/logo.svg" alt="Parqtel">
+        Parqtel <small>Observability</small>
+      </a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <nav class="nav-links" id="navLinks">
+        <a href="docs/architecture.html">Architecture</a>
+        <a href="docs/getting-started.html">Get Started</a>
+        <a href="docs/deployment.html">Deploy</a>
+        <a href="docs/mcp.html">MCP</a>
+        <a href="docs/api.html">API</a>
+        <a href="docs/screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="container hero-grid">
+      <div>
+        <span class="eyebrow">Open Source · Rust · Apache-2.0</span>
+        <h1>Observability that fits in a&nbsp;single binary.</h1>
+        <p class="lede">Parqtel streams OpenTelemetry metrics, logs, and traces into compressed Apache&nbsp;Parquet — with a Prometheus-compatible query API, a Grafana datasource, built-in alerting, and 7 AI-native MCP servers.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="docs/getting-started.html">
+            Get started
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn-ghost" href="docs/architecture.html">View architecture</a>
+        </div>
+        <div class="hero-note">
+          <span><span class="dot"></span> ~15&nbsp;MB distroless image</span>
+          <span><span class="dot"></span> 10–20× storage reduction</span>
+          <span><span class="dot"></span> Drop-in Grafana/Prometheus</span>
+        </div>
+        <div class="badges" style="margin-top:20px">
+          <span class="badge">Apache-2.0</span>
+          <span class="badge">Docker · GHCR</span>
+          <span class="badge">Helm (OCI)</span>
+          <span class="badge">MSRV 1.86</span>
+          <span class="badge">unsafe-forbidden</span>
+          <span class="badge">OpenSSF Scorecard</span>
+        </div>
+      </div>
+
+      <div class="hero-card">
+        <div class="term"><span class="c"># send an OTLP metric over JSON</span>
+curl -X POST http://localhost:9090/v1/metrics/json \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{"resourceMetrics":[{"resource":{"attributes":[
+    {"key":"service.name","value":{"stringValue":"demo"}}]},
+    "scopeMetrics":[{"metrics":[{"name":"http_requests_total",
+    "gauge":{"dataPoints":[{"asDouble":42,
+    "timeUnixNano":"1700000000000000000",
+    "attributes":[{"key":"method","value":{"stringValue":"GET"}}]}]}}]}]}]}'</span>
+
+<span class="c"># query it back — Prometheus API</span>
+curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_total"</span>
+<span class="k">→</span> {<span class="s">"status"</span>:<span class="s">"success"</span>,<span class="s">"data"</span>:{<span class="s">"resultType"</span>:<span class="s">"vector"</span>,...}}</div>
+        <div class="cap">One binary. OTLP in, PromQL out.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Why Parqtel</span>
+        <h2>Built for lean, long-lived telemetry</h2>
+        <p>Every design decision trades operational weight for throughput and durability — so you can keep months of signals on commodity storage.</p>
+      </div>
+      <div class="grid grid-3">
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></div>
+          <h3>Minimal footprint</h3>
+          <p>Single static binary, ~15&nbsp;MB distroless image, zero external datastore. Runs on edge ARM boxes or a single pod.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
+          <h3>Columnar storage</h3>
+          <p>Block-based Apache Parquet with Zstd/Snappy/LZ4 compression — 10–20× smaller than Prometheus TSDB for long retention.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="18" cy="17" r="3"/></svg></div>
+          <h3>Drop-in compatible</h3>
+          <p>Prometheus <code class="inline">/api/v1/*</code> and Grafana SimpleJSON mean your existing dashboards keep working unchanged.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4 4 4 0 0 1 2 7v6H6v-6a4 4 0 0 1 2-7 4 4 0 0 1 4-4z"/><path d="M9 22h6"/></svg></div>
+          <h3>PromQL-compatible query</h3>
+          <p>Instant &amp; range queries, label matching, and aggregations: <code class="inline">rate</code>, <code class="inline">irate</code>, <code class="inline">histogram_quantile</code>, and more.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>Alerting engine</h3>
+          <p>YAML rules, threshold &amp; anomaly detection, a full state machine, and a 15s evaluation loop with noise scoring.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9zM3 9h1M3 15h1M20 9h1M20 15h1M9 3v1M15 3v1M9 20v1M15 20v1"/></svg></div>
+          <h3>AI-native (MCP)</h3>
+          <p>7 Model Context Protocol servers give LLMs direct, typed tool access for automated incident response.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- USE CASES -->
+  <section class="alt" id="use-cases">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Use Cases</span>
+        <h2>Where Parqtel earns its keep</h2>
+      </div>
+      <table class="uc-table">
+        <thead><tr><th>Problem</th><th>How Parqtel helps</th></tr></thead>
+        <tbody>
+          <tr><td>Low-cost archiving</td><td>Stream OTel data to Parquet for long-term storage with ~90% compression versus Prometheus TSDB.</td></tr>
+          <tr><td>Edge observability</td><td>Deploy on resource-constrained edge/IoT devices for local-first telemetry with no cluster to babysit.</td></tr>
+          <tr><td>Log-to-metric pipelines</td><td>Extract business metrics from high-volume Nginx or app logs with declarative YAML pipelines.</td></tr>
+          <tr><td>AI incident response</td><td>Point MCP servers at your telemetry so LLMs can investigate and write RCAs autonomously.</td></tr>
+          <tr><td>Serverless monitoring</td><td>Ingest ephemeral logs/metrics from Lambda or Cloud Run without running a heavy backend.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- PERFORMANCE -->
+  <section id="performance">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Performance</span>
+        <h2>Fast on the hot path, cheap at rest</h2>
+        <p>Sustained 1,000 samples/sec (metrics + logs + traces) for 15 minutes on commodity hardware — zero errors.</p>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="num">972</div><div class="lbl">samples/sec sustained</div></div>
+        <div class="stat"><div class="num">4.4ms</div><div class="lbl">ingest p50 / batch</div></div>
+        <div class="stat"><div class="num">12.7ms</div><div class="lbl">query p50 (instant)</div></div>
+        <div class="stat"><div class="num">1.7ms</div><div class="lbl">in-memory query latency</div></div>
+      </div>
+      <p class="center" style="margin-top:22px">Hot-path optimizations (non-blocking flushes, row-group pruning, per-chunk label caching) are detailed in the
+        <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">performance benchmarks</a>. Scan throughput improved +39% after pruning.</p>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section class="alt" id="architecture">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Architecture</span>
+        <h2>One server, a shared core, and a fleet of MCP tools</h2>
+        <p>A single Axum binary handles ingestion, querying, pipelines, and alerting on top of <code class="inline">parqtel-core</code>. MCP servers run as independent sidecars.</p>
+      </div>
+      <div class="diagram-wrap">
+        <img src="assets/img/architecture.svg" alt="Parqtel architecture diagram">
+      </div>
+      <h3 style="margin-top:34px">Workspace crates</h3>
+      <table class="uc-table">
+        <thead><tr><th>Crate</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">parqtel-core</code></td><td>Data models, storage engine, block index, compaction, retention, configuration.</td></tr>
+          <tr><td><code class="inline">parqtel-ingest</code></td><td>OTLP protobuf/JSON decoding, block rotation, crash-safe Parquet writing.</td></tr>
+          <tr><td><code class="inline">parqtel-query</code></td><td>PromQL-compatible execution, label matching, aggregation functions.</td></tr>
+          <tr><td><code class="inline">parqtel-alert</code></td><td>Rule registry, threshold evaluation, alert state machine, alert store.</td></tr>
+          <tr><td><code class="inline">parqtel-pipeline</code></td><td>Recording rules, stream processing pipelines, PromQL/DQL evaluation.</td></tr>
+          <tr><td><code class="inline">parqtel-server</code></td><td>Axum HTTP server, route handlers, middleware, telemetry, built-in UI.</td></tr>
+          <tr><td><code class="inline">parqtel-mcp-core</code></td><td>Shared MCP framework: JSON-RPC, rate limiting, tool registry.</td></tr>
+          <tr><td><code class="inline">parqtel-mcp-*</code></td><td>Slack, PagerDuty, Jira, Notion, Discord, Google Docs, Parqtel tool servers.</td></tr>
+        </tbody>
+      </table>
+      <div class="center" style="margin-top:24px"><a class="btn btn-ghost" href="docs/architecture.html">Deep dive into the architecture</a></div>
+    </div>
+  </section>
+
+  <!-- STORAGE -->
+  <section id="storage">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Storage Model</span>
+        <h2>Block-based Parquet, built for pruning and snapshots</h2>
+      </div>
+      <div class="diagram-wrap">
+        <img src="assets/img/storage.svg" alt="Parqtel block-based storage model">
+      </div>
+      <div class="grid grid-3" style="margin-top:26px">
+        <div class="card"><h3>Metrics blocks</h3><p>2-hour windows, up to 1M rows, Zstd compressed. Retained 7 days by default.</p></div>
+        <div class="card"><h3>Log blocks</h3><p>30-minute windows, up to 200K rows. Retained 3 days by default.</p></div>
+        <div class="card"><h3>Compaction</h3><p>Small blocks merge automatically (hourly); row-group stats enable time-range pruning.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MCP -->
+  <section class="alt" id="mcp">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">AI Incident Response</span>
+        <h2>Give your LLM the keys to the war room</h2>
+        <p>Parqtel ships 7 Model Context Protocol servers. An agent can notify, investigate, write an RCA, resolve, and draft the postmortem — without glue code.</p>
+      </div>
+      <div class="diagram-wrap">
+        <img src="assets/img/mcp-flow.svg" alt="AI-driven incident response flow">
+      </div>
+      <div class="grid grid-4" style="margin-top:26px">
+        <div class="card"><h3>Slack · 3001</h3><p>Alerts, RCA updates, incident channels.</p></div>
+        <div class="card"><h3>PagerDuty · 3002</h3><p>Incidents, notes, on-call lookup.</p></div>
+        <div class="card"><h3>Jira · 3003</h3><p>Issues, RCA comments, action items.</p></div>
+        <div class="card"><h3>Notion · 3004</h3><p>Incident &amp; postmortem pages.</p></div>
+        <div class="card"><h3>Discord · 3005</h3><p>Alert embeds &amp; RCA threads.</p></div>
+        <div class="card"><h3>Google Docs · 3006</h3><p>Postmortem docs &amp; sharing.</p></div>
+        <div class="card"><h3>Parqtel · 3007</h3><p>Query its own metrics &amp; logs.</p></div>
+        <div class="card"><h3>+ core</h3><p>Shared JSON-RPC, rate limiting, schemas.</p></div>
+      </div>
+      <div class="center" style="margin-top:24px"><a class="btn btn-ghost" href="docs/mcp.html">Explore the MCP servers</a></div>
+    </div>
+  </section>
+
+  <!-- QUICK START -->
+  <section id="quickstart">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Quick Start</span>
+        <h2>Running in under a minute</h2>
+      </div>
+      <div class="grid grid-2">
+        <div>
+          <h3>Docker</h3>
+          <div class="codeblock">
+            <button class="copy-btn">Copy</button>
+            <pre><code>docker run -d \
+  --name parqtel \
+  -p 8080:8080 \
+  -v parqtel_data:/var/lib/parqtel \
+  parqtel/parqtel:latest
+
+curl http://localhost:8080/health   # {"status":"ok"}</code></pre>
+          </div>
+        </div>
+        <div>
+          <h3>Docker Compose (full stack)</h3>
+          <div class="codeblock">
+            <button class="copy-btn">Copy</button>
+            <pre><code>make dev-setup          # copies .env, starts stack
+# → Parqtel :9090 · Grafana :3000 · Prometheus :9091
+
+# or from source
+cargo build --release && ./target/release/parqtel serve</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="center" style="margin-top:14px"><a class="btn btn-primary" href="docs/getting-started.html">Read the full guide</a></div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="alt">
+    <div class="container center">
+      <h2>Start observing — without the bill</h2>
+      <p class="lead">Parqtel is Apache-2.0 and ready for production. Clone it, run it, and point Grafana at it.</p>
+      <div class="hero-cta" style="justify-content:center;margin-top:8px">
+        <a class="btn btn-primary" href="https://github.com/parqtel/parqtel-oss">
+          <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          Star on GitHub
+        </a>
+        <a class="btn btn-ghost" href="docs/deployment.html">Deploy to Kubernetes</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="index.html"><img class="logo" src="assets/img/logo.svg" alt="Parqtel"> Parqtel</a>
+          <p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet, with a PromQL API and AI-native MCP servers.</p>
+        </div>
+        <div>
+          <h5>Documentation</h5>
+          <a href="docs/getting-started.html">Get Started</a>
+          <a href="docs/architecture.html">Architecture</a>
+          <a href="docs/deployment.html">Deployment</a>
+          <a href="docs/configuration.html">Configuration</a>
+          <a href="docs/api.html">API Reference</a>
+          <a href="docs/query-functions.html">Query Functions</a>
+          <a href="docs/screenshots.html">UI Screenshots</a>
+          <a href="docs/api-explorer.html">API Explorer</a>
+        </div>
+        <div>
+          <h5>Integrations</h5>
+          <a href="docs/mcp.html">MCP Servers</a>
+          <a href="docs/faq.html">FAQ</a>
+          <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a>
+          <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a>
+        </div>
+        <div>
+          <h5>Project</h5>
+          <a href="https://github.com/parqtel/parqtel-oss">GitHub</a>
+          <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a>
+          <a href="https://github.com/parqtel/parqtel-oss/security">Security</a>
+          <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2025 Parqtel. Apache-2.0 licensed.</span>
+        <span>Built with Rust · Axum · Apache Parquet</span>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/js/site.js"></script>
+</body>
+</html>

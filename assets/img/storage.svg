@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" font-family="-apple-system,Segoe UI,Roboto,sans-serif" role="img" aria-label="Parqtel block-based storage model">
+  <defs>
+    <marker id="s" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9z" fill="#18b6ff"/></marker>
+  </defs>
+
+  <!-- Metric lane -->
+  <text x="20" y="40" font-size="13" font-weight="700" fill="#0e1424">Metrics blocks</text>
+  <text x="20" y="58" font-size="10.5" fill="#8a93a6">2h window · ≤1M rows · Zstd</text>
+  <g font-size="11" font-weight="600" fill="#fff" text-anchor="middle">
+    <rect x="20" y="70" width="150" height="40" rx="8" fill="#7c5cff"/>
+    <text x="95" y="95">blk 00–02h</text>
+    <rect x="180" y="70" width="150" height="40" rx="8" fill="#7c5cff"/>
+    <text x="255" y="95">blk 02–04h</text>
+    <rect x="340" y="70" width="150" height="40" rx="8" fill="#7c5cff"/>
+    <text x="415" y="95">blk 04–06h</text>
+    <rect x="500" y="70" width="150" height="40" rx="8" fill="#7c5cff"/>
+    <text x="575" y="95">blk 06–08h</text>
+  </g>
+  <!-- compaction -->
+  <text x="690" y="78" font-size="10.5" fill="#8a93a6">hourly</text>
+  <g font-size="11" font-weight="600" fill="#fff" text-anchor="middle">
+    <rect x="690" y="70" width="160" height="40" rx="8" fill="#5a8bff"/>
+    <text x="770" y="95">compacted</text>
+  </g>
+  <g fill="none" stroke="#18b6ff" stroke-width="2.5" marker-end="url(#s)">
+    <path d="M500 90 H688"/>
+  </g>
+  <!-- retention -->
+  <g font-size="11" font-weight="600" fill="#fff" text-anchor="middle">
+    <rect x="870" y="70" width="110" height="40" rx="8" fill="#b9c0d0"/>
+    <text x="925" y="95">evicted</text>
+  </g>
+  <text x="870" y="128" font-size="10.5" fill="#8a93a6">retention TTL (default 7d)</text>
+
+  <!-- Log lane -->
+  <text x="20" y="190" font-size="13" font-weight="700" fill="#0e1424">Log blocks</text>
+  <text x="20" y="208" font-size="10.5" fill="#8a93a6">30m window · ≤200K rows · Zstd</text>
+  <g font-size="10" font-weight="600" fill="#fff" text-anchor="middle">
+    <rect x="20" y="220" width="74" height="36" rx="7" fill="#18b6ff"/><text x="57" y="242">L1</text>
+    <rect x="104" y="220" width="74" height="36" rx="7" fill="#18b6ff"/><text x="141" y="242">L2</text>
+    <rect x="188" y="220" width="74" height="36" rx="7" fill="#18b6ff"/><text x="225" y="242">L3</text>
+    <rect x="272" y="220" width="74" height="36" rx="7" fill="#18b6ff"/><text x="309" y="242">L4</text>
+  </g>
+  <g font-size="10" font-weight="600" fill="#fff" text-anchor="middle">
+    <rect x="370" y="220" width="150" height="36" rx="7" fill="#1499d6"/><text x="445" y="242">compacted logs</text>
+  </g>
+  <g fill="none" stroke="#18b6ff" stroke-width="2.5" marker-end="url(#s)">
+    <path d="M346 238 H368"/>
+  </g>
+  <g font-size="10" font-weight="600" fill="#fff" text-anchor="middle">
+    <rect x="540" y="220" width="110" height="36" rx="7" fill="#b9c0d0"/><text x="595" y="242">evicted</text>
+  </g>
+  <text x="540" y="276" font-size="10.5" fill="#8a93a6">retention TTL (default 3d)</text>
+
+  <!-- notes -->
+  <g font-size="11" fill="#5a6478">
+    <rect x="700" y="220" width="280" height="92" rx="10" fill="#f6f7fb" stroke="#d3d7e4"/>
+    <text x="716" y="244" font-weight="700" fill="#0e1424">Why blocks?</text>
+    <text x="716" y="266">Each block is a self-contained Parquet file with</text>
+    <text x="716" y="282">row-group min/max stats for pruning.</text>
+    <text x="716" y="298">Immutable once written → safe to snapshot &amp; back up</text>
+    <text x="716" y="314">while the server is running.</text>
+  </g>
+</svg>

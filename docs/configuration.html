@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuration · Parqtel Docs</title>
+  <meta name="description" content="Configure Parqtel via Figment layering: TOML file, environment variables, and CLI flags. CLI subcommands, key environment variables, and a sample config.">
+  <link rel="icon" href="../assets/img/logo.svg">
+  <link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel <small>Docs</small></a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="architecture.html">Architecture</a>
+        <a href="getting-started.html">Get Started</a>
+        <a href="deployment.html">Deploy</a>
+        <a href="mcp.html">MCP</a>
+        <a href="api.html">API</a>
+        <a href="screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="sidebar">
+      <div class="group-label">Learn</div>
+      <a href="architecture.html">Architecture</a>
+      <a href="getting-started.html">Get Started</a>
+      <a href="deployment.html">Deployment</a>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Configuration</div>
+      <a href="configuration.html#cli">CLI commands</a>
+      <a href="configuration.html#layering">Layering</a>
+      <a href="configuration.html#env">Environment variables</a>
+      <a href="configuration.html#sample">Sample config</a>
+      <a href="configuration.html#alerts">Alerting</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API Reference</a>
+      <a href="query-functions.html">Query Functions</a>
+      <a href="mcp.html">MCP Servers</a>
+      <a href="faq.html">FAQ</a>
+          <div class="group-label">UI</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API Explorer</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>Configuration</h1>
+      <p class="lead">Parqtel resolves configuration through Figment in a fixed priority order: defaults → TOML file → environment variables → CLI flags.</p>
+
+      <h2 id="cli">CLI commands</h2>
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">parqtel serve</code></td><td>Start the HTTP server (default)</td></tr>
+          <tr><td><code class="inline">parqtel compact</code></td><td>Run one compaction pass and exit</td></tr>
+          <tr><td><code class="inline">parqtel inspect</code></td><td>Print a storage summary as JSON</td></tr>
+          <tr><td><code class="inline">parqtel export</code></td><td>Export metric data to CSV (<code class="inline">--metric</code>, <code class="inline">--start</code>, <code class="inline">--end</code>, <code class="inline">--output</code>)</td></tr>
+        </tbody>
+      </table>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>parqtel --config config/default.toml serve
+parqtel export --metric http_requests_total \
+  --start 2025-01-01T00:00:00Z --end 2025-01-02T00:00:00Z \
+  --output out.csv</code></pre></div>
+
+      <h2 id="layering">Layering</h2>
+      <ol>
+        <li><strong>Built-in defaults</strong></li>
+        <li><strong>TOML config file</strong> — <code class="inline">config/default.toml</code>, override with <code class="inline">PARQTEL_CONFIG</code></li>
+        <li><strong>Environment variables</strong> — <code class="inline">PARQTEL__</code> prefix, <code class="inline">__</code> as the nested separator (e.g. <code class="inline">PARQTEL__STORAGE__COMPRESSION</code>)</li>
+        <li><strong>CLI flags</strong> — highest priority</li>
+      </ol>
+
+      <h2 id="env">Environment variables</h2>
+      <table>
+        <thead><tr><th>Variable</th><th>Description</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">PARQTEL_CONFIG</code></td><td>Path to TOML config file</td><td><code class="inline">config/default.toml</code></td></tr>
+          <tr><td><code class="inline">PARQTEL_BIND</code></td><td>TCP bind address</td><td><code class="inline">0.0.0.0:8080</code></td></tr>
+          <tr><td><code class="inline">PARQTEL_DATA_DIR</code></td><td>Data directory</td><td><code class="inline">data</code></td></tr>
+          <tr><td><code class="inline">RUST_LOG</code></td><td>Log level / filter</td><td><code class="inline">info</code></td></tr>
+          <tr><td><code class="inline">PARQTEL__STORAGE__COMPRESSION</code></td><td>Compression codec</td><td><code class="inline">zstd</code></td></tr>
+          <tr><td><code class="inline">PARQTEL__STORAGE__RETENTION_DAYS</code></td><td>Retention period</td><td><code class="inline">7</code></td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="sample">Sample config</h2>
+      <p>The TOML file mirrors the <code class="inline">PARQTEL__*</code> env surface. Equivalent nested keys:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>bind = "0.0.0.0:8080"
+data_dir = "data"
+
+[storage]
+data_dir = "data"
+logs_dir = "data/logs"
+compression = "zstd"        # zstd | snappy | lz4
+retention_days = 7
+logs_retention_days = 3
+
+[query]
+max_series = 500
+max_samples_per_series = 5000
+
+[telemetry]
+log_format = "json"         # json | text</code></pre></div>
+      <div class="callout info"><div class="c-ic">↗</div><div><p>See the canonical <code class="inline">config/default.toml</code> in the repository for the full, versioned schema.</p></div></div>
+
+      <h2 id="alerts">Alerting</h2>
+      <p>Alerts are defined as YAML rules evaluated by a background loop (every 15s). Rules support threshold and anomaly detection and flow through a state machine: <code class="inline">Inactive → Pending → Firing → Resolved</code>, with noise scoring to cut alert fatigue.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>route: demo
+rules:
+  - name: high_error_rate
+    expr: rate(http_requests_total{status="500"}[5m]) > 0.05
+    for: 2m
+    severity: critical
+    annotations:
+      summary: "Error rate above 5% for {{ $labels.service }}"</code></pre></div>
+      <p>Manage rules at runtime via <code class="inline">/api/v1/rules</code> (GET/POST/PUT/DELETE) and acknowledge/resolve via <code class="inline">/api/v1/alerts/:id/...</code>. See the <a href="api.html#alerts">API reference</a>.</p>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
+        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="query-functions.html">Query Functions</a><a href="screenshots.html">UI Screenshots</a><a href="api-explorer.html">API Explorer</a></div>
+        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
+        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+    </div>
+  </footer>
+  <script src="../assets/js/site.js"></script>
+</body>
+</html>

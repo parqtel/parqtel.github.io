@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 290" font-family="-apple-system,Segoe UI,Roboto,sans-serif" role="img" aria-label="Parqtel ingestion to query data flow">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9z" fill="#7c5cff"/></marker>
+  </defs>
+  <g font-size="12" font-weight="650" fill="#0e1424" text-anchor="middle">
+    <!-- Stage 1 -->
+    <rect x="20" y="110" width="160" height="74" rx="12" fill="#fff" stroke="#d3d7e4"/>
+    <text x="100" y="140" font-weight="700">OTLP Ingest</text>
+    <text x="100" y="160" font-size="10" fill="#5a6478">protobuf / JSON</text>
+    <text x="100" y="175" font-size="10" fill="#5a6478">metrics · logs · traces</text>
+
+    <!-- Stage 2 -->
+    <rect x="218" y="110" width="160" height="74" rx="12" fill="#7c5cff" fill-opacity="0.10" stroke="#7c5cff"/>
+    <text x="298" y="140" font-weight="700">Memory Buffer</text>
+    <text x="298" y="160" font-size="10" fill="#5a6478">indexed HashMap</text>
+    <text x="298" y="175" font-size="10" fill="#5a6478">≈1.7ms queryable</text>
+
+    <!-- Stage 3 -->
+    <rect x="416" y="110" width="160" height="74" rx="12" fill="#fff" stroke="#d3d7e4"/>
+    <text x="496" y="140" font-weight="700">Parquet Block</text>
+    <text x="496" y="160" font-size="10" fill="#5a6478">Zstd / Snappy / LZ4</text>
+    <text x="496" y="175" font-size="10" fill="#5a6478">crash-safe flush</text>
+
+    <!-- Stage 4 -->
+    <rect x="614" y="110" width="160" height="74" rx="12" fill="#fff" stroke="#d3d7e4"/>
+    <text x="694" y="140" font-weight="700">Compaction +</text>
+    <text x="694" y="158" font-weight="700">Retention</text>
+    <text x="694" y="176" font-size="10" fill="#5a6478">hourly · TTL per signal</text>
+
+    <!-- Stage 5 -->
+    <rect x="812" y="110" width="168" height="74" rx="12" fill="#18b6ff" fill-opacity="0.12" stroke="#18b6ff"/>
+    <text x="896" y="140" font-weight="700">Query API</text>
+    <text x="896" y="160" font-size="10" fill="#5a6478">PromQL-compatible</text>
+    <text x="896" y="175" font-size="10" fill="#5a6478">instant + range</text>
+  </g>
+
+  <!-- flow arrows -->
+  <g fill="none" stroke="#7c5cff" stroke-width="2.5" marker-end="url(#a)">
+    <path d="M180 147 H216"/>
+    <path d="M378 147 H414"/>
+    <path d="M576 147 H612"/>
+    <path d="M774 147 H810"/>
+  </g>
+
+  <!-- outputs -->
+  <g font-size="11.5" font-weight="650" fill="#5a6478" text-anchor="middle">
+    <text x="896" y="68">Consumers</text>
+    <rect x="812" y="34" width="54" height="26" rx="7" fill="#fff" stroke="#d3d7e4"/><text x="839" y="51">Grafana</text>
+    <rect x="874" y="34" width="56" height="26" rx="7" fill="#fff" stroke="#d3d7e4"/><text x="902" y="51">Prom</text>
+    <rect x="938" y="34" width="42" height="26" rx="7" fill="#fff" stroke="#d3d7e4"/><text x="959" y="51">UI</text>
+  </g>
+  <g fill="none" stroke="#9aa6bd" stroke-width="2" marker-end="url(#a)">
+    <path d="M896 84 V108"/>
+  </g>
+
+  <!-- caption -->
+  <text x="20" y="226" font-size="11" fill="#8a93a6">Non-blocking flush (spawn_blocking) · row-group pruning · per-chunk label caching keep the hot path off the async workers.</text>
+  <text x="20" y="246" font-size="11" fill="#8a93a6">Data is queryable from the in-memory buffer before it is flushed to Parquet, so recent samples return in ~1.7ms.</text>
+</svg>
