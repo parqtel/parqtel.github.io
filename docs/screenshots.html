@@ -45,10 +45,14 @@
 
     <main class="docs-main">
       <h1>Built-in Web UI</h1>
-      <p class="lead">Parqtel ships a zero-dependency web console at <code class="inline">/ui</code> — no separate frontend deployment. It includes PromQL autocomplete, time-range selection, a trace waterfall, and alert acknowledge/resolve actions.</p>
+      <p class="lead">Parqtel ships a zero-dependency web console at <code class="inline">/ui</code> — no separate frontend deployment, works air-gapped. It includes an overview dashboard, a guided metrics Builder⇄Code query editor, log field facets, a trace-grouped browse list with waterfalls, boolean log/trace search, firing alerts with evidence, rule and silence management, and deep-linkable URLs.</p>
       <p class="muted">Click any screenshot to open the full image.</p>
 
       <div class="gallery" style="margin-top:20px">
+        <a class="shot" href="../assets/img/screenshots/ui-overview.png">
+          <img src="../assets/img/screenshots/ui-overview.png" alt="Parqtel overview" loading="lazy">
+          <div class="cap"><b>Overview</b><span>Per-signal stat cards and a 6-hour log-volume sparkline.</span></div>
+        </a>
         <a class="shot" href="../assets/img/screenshots/ui-metrics.png">
           <img src="../assets/img/screenshots/ui-metrics.png" alt="Parqtel metrics view" loading="lazy">
           <div class="cap"><b>Metrics</b><span>PromQL query with autocomplete and a time-series chart.</span></div>
@@ -63,7 +67,11 @@
         </a>
         <a class="shot" href="../assets/img/screenshots/ui-alerts.png">
           <img src="../assets/img/screenshots/ui-alerts.png" alt="Parqtel alerts view" loading="lazy">
-          <div class="cap"><b>Alerts</b><span>Alert state machine with acknowledge and resolve actions.</span></div>
+          <div class="cap"><b>Alerts</b><span>Live firing alerts with severity chips and evidence.</span></div>
+        </a>
+        <a class="shot" href="../assets/img/screenshots/ui-alerts-rules.png">
+          <img src="../assets/img/screenshots/ui-alerts-rules.png" alt="Parqtel alert rules" loading="lazy">
+          <div class="cap"><b>Alert rules</b><span>Rule management with the routing and silence views.</span></div>
         </a>
       </div>
 

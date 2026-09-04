@@ -62,8 +62,9 @@
           <span class="badge">Apache-2.0</span>
           <span class="badge">Docker · GHCR</span>
           <span class="badge">Helm (OCI)</span>
-          <span class="badge">MSRV 1.86</span>
+          <span class="badge">MSRV 1.87</span>
           <span class="badge">unsafe-forbidden</span>
+          <span class="badge">PQL: ParQL · ParqtelQL · Pipelines</span>
           <span class="badge">OpenSSF Scorecard</span>
         </div>
       </div>
@@ -84,6 +85,23 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
 <span class="k">→</span> {<span class="s">"status"</span>:<span class="s">"success"</span>,<span class="s">"data"</span>:{<span class="s">"resultType"</span>:<span class="s">"vector"</span>,...}}</div>
         <div class="cap">One binary. OTLP in, PromQL out.</div>
       </div>
+    </div>
+  </section>
+
+  <!-- UI SHOWCASE -->
+  <section class="section" style="padding-top:24px">
+    <div class="container">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <h2 style="margin:0">The built-in console</h2>
+        <a href="docs/screenshots.html" style="color:var(--accent,#00F5D4)">All screenshots →</a>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:18px">
+        <a href="docs/screenshots.html" style="text-decoration:none"><img src="assets/img/screenshots/ui-overview.png" alt="Parqtel overview" loading="lazy" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12)"></a>
+        <a href="docs/screenshots.html" style="text-decoration:none"><img src="assets/img/screenshots/ui-metrics.png" alt="Parqtel metrics" loading="lazy" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12)"></a>
+        <a href="docs/screenshots.html" style="text-decoration:none"><img src="assets/img/screenshots/ui-alerts.png" alt="Parqtel alerts" loading="lazy" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12)"></a>
+        <a href="docs/screenshots.html" style="text-decoration:none"><img src="assets/img/screenshots/ui-traces.png" alt="Parqtel traces" loading="lazy" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12)"></a>
+      </div>
+      <p class="muted" style="margin-top:14px">Overview, metrics, logs, traces, alerting — one zero-dependency console, served from the same binary at <code class="inline">/ui</code>.</p>
     </div>
   </section>
 
