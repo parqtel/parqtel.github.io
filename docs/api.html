@@ -146,9 +146,11 @@ curl "http://localhost:9090/api/v1/query_range?query=rate(http_requests_total[5m
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/health</code></td><td>Health check</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/metrics</code></td><td>Prometheus metrics (self-monitoring)</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/metrics</code></td><td>Prometheus metrics (self-monitoring, incl. <code class="inline">parqtel_ingest_rate_per_sec</code>, <code class="inline">parqtel_ingest_bytes_per_sec</code>, <code class="inline">parqtel_ingest_gap_secs</code>)</td></tr>
           <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/oas</code></td><td>OpenAPI 3.0 specification</td></tr>
           <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/ui</code></td><td>Built-in web UI</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/stats</code></td><td>Storage / buffer / config snapshot (blocks, rows, disk bytes per signal)</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/ingest_rates</code></td><td>Live per-signal ingestion rates — current + 60s/5m/15m averages, wire bytes/sec, gap detection, 180s sparkline history</td></tr>
         </tbody>
       </table>
       <div class="callout info"><div class="c-ic">↗</div><div><p>See the <a href="query-functions.html">Query Functions</a> reference for supported PromQL operations, constraints, and not-yet-supported features.</p></div></div>

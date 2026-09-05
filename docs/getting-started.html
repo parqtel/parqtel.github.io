@@ -64,6 +64,12 @@
 
 curl http://localhost:8080/health   # {"status":"ok"}</code></pre></div>
 
+      <h3>Homebrew (Linux &amp; macOS)</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>brew tap parqtel/tap
+brew install parqtel-oss
+parqtel --version</code></pre></div>
+      <p class="muted">The formula pulls the release binary from <code class="inline">parqtel-oss</code> GitHub releases (linux-amd64/arm64, darwin-amd64/arm64) — no local Rust toolchain needed.</p>
+
       <h3>Docker Compose (full stack)</h3>
       <p>Spins up Parqtel, Grafana, Prometheus, and a load generator. MCP servers are present but commented out — enable the ones you need after adding tokens to <code class="inline">.env</code>.</p>
       <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>make dev-setup        # copies .env.example → .env, then `docker compose up -d`

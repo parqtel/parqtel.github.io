@@ -101,7 +101,7 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
         <a href="docs/screenshots.html" style="text-decoration:none"><img src="assets/img/screenshots/ui-alerts.png" alt="Parqtel alerts" loading="lazy" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12)"></a>
         <a href="docs/screenshots.html" style="text-decoration:none"><img src="assets/img/screenshots/ui-traces.png" alt="Parqtel traces" loading="lazy" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12)"></a>
       </div>
-      <p class="muted" style="margin-top:14px">Overview, metrics, logs, traces, alerting — one zero-dependency console, served from the same binary at <code class="inline">/ui</code>.</p>
+      <p class="muted" style="margin-top:14px">Overview with live ingestion rates (spike &amp; gap detection, wire bytes/sec), metrics, logs, traces, alerting — one zero-dependency console, served from the same binary at <code class="inline">/ui</code>.</p>
     </div>
   </section>
 
@@ -138,6 +138,11 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg></div>
           <h3>Alerting engine</h3>
           <p>YAML rules, threshold &amp; anomaly detection, a full state machine, and a 15s evaluation loop with noise scoring.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l4-8 4 4 4-8 4 6"/><path d="M2 21h20"/></svg></div>
+          <h3>Live ingestion telemetry</h3>
+          <p>Lock-free per-second rate wheels for metrics, logs, and traces — spike/gap detection, 60s/5m/15m averages, and wire bytes/sec, all on the Overview.</p>
         </div>
         <div class="card">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9zM3 9h1M3 15h1M20 9h1M20 15h1M9 3v1M15 3v1M9 20v1M15 20v1"/></svg></div>
