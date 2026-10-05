@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Configuration · Parqtel Docs</title>
-  <meta name="description" content="Configure Parqtel via Figment layering: TOML file, environment variables, and CLI flags. CLI subcommands, key environment variables, and a sample config.">
+  <meta name="description" content="Every Parqtel configuration key, environment variable and CLI flag: server, storage, logs, ingest including the write-ahead log, query, telemetry, alerts and the Kubernetes custom metrics provider.">
   <link rel="icon" href="../assets/img/logo.svg">
   <link rel="stylesheet" href="../assets/css/site.css">
 </head>
@@ -30,96 +30,420 @@
     <aside class="sidebar">
       <div class="group-label">Learn</div>
       <a href="architecture.html">Architecture</a>
-      <a href="getting-started.html">Get Started</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
       <a href="deployment.html">Deployment</a>
       <a href="configuration.html">Configuration</a>
-      <div class="group-label">Configuration</div>
-      <a href="configuration.html#cli">CLI commands</a>
-      <a href="configuration.html#layering">Layering</a>
-      <a href="configuration.html#env">Environment variables</a>
-      <a href="configuration.html#sample">Sample config</a>
-      <a href="configuration.html#alerts">Alerting</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
       <div class="group-label">Reference</div>
-      <a href="api.html">API Reference</a>
-      <a href="query-functions.html">Query Functions</a>
-      <a href="mcp.html">MCP Servers</a>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
       <a href="faq.html">FAQ</a>
-          <div class="group-label">UI</div>
+      <div class="group-label">Console</div>
       <a href="screenshots.html">Screenshots</a>
-      <a href="api-explorer.html">API Explorer</a>
+      <a href="api-explorer.html">API explorer</a>
     </aside>
 
     <main class="docs-main">
       <h1>Configuration</h1>
-      <p class="lead">Parqtel resolves configuration through Figment in a fixed priority order: defaults → TOML file → environment variables → CLI flags.</p>
-
-      <h2 id="cli">CLI commands</h2>
-      <table>
-        <thead><tr><th>Command</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code class="inline">parqtel serve</code></td><td>Start the HTTP server (default)</td></tr>
-          <tr><td><code class="inline">parqtel compact</code></td><td>Run one compaction pass and exit</td></tr>
-          <tr><td><code class="inline">parqtel inspect</code></td><td>Print a storage summary as JSON</td></tr>
-          <tr><td><code class="inline">parqtel export</code></td><td>Export metric data to CSV (<code class="inline">--metric</code>, <code class="inline">--start</code>, <code class="inline">--end</code>, <code class="inline">--output</code>)</td></tr>
-        </tbody>
-      </table>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>parqtel --config config/default.toml serve
-parqtel export --metric http_requests_total \
-  --start 2025-01-01T00:00:00Z --end 2025-01-02T00:00:00Z \
-  --output out.csv</code></pre></div>
+      <p class="lead">Parqtel resolves configuration through Figment in a fixed priority order. Every key below is validated at startup, and everything here maps 1:1 to a struct in <code class="inline">parqtel-core/src/config/</code>.</p>
 
       <h2 id="layering">Layering</h2>
+      <p>Highest priority first:</p>
       <ol>
+        <li><strong>CLI flags</strong> — <code class="inline">--config</code>, <code class="inline">--bind</code>, <code class="inline">--data-dir</code>, <code class="inline">--log-level</code></li>
+        <li><strong>Environment variables</strong> — <code class="inline">PARQTEL__</code> prefix, <code class="inline">__</code> as the nested separator</li>
+        <li><strong>TOML config file</strong> — <code class="inline">config/default.toml</code>, or the path from <code class="inline">--config</code> / <code class="inline">PARQTEL_CONFIG</code></li>
         <li><strong>Built-in defaults</strong></li>
-        <li><strong>TOML config file</strong> — <code class="inline">config/default.toml</code>, override with <code class="inline">PARQTEL_CONFIG</code></li>
-        <li><strong>Environment variables</strong> — <code class="inline">PARQTEL__</code> prefix, <code class="inline">__</code> as the nested separator (e.g. <code class="inline">PARQTEL__STORAGE__COMPRESSION</code>)</li>
-        <li><strong>CLI flags</strong> — highest priority</li>
       </ol>
+      <div class="callout info"><div class="c-ic">ℹ</div><div><p>The documented <code class="inline">PARQTEL__SECTION__KEY</code> spelling works as written — it was previously ignored because the prefix parser left an empty first key segment. The single-underscore form (<code class="inline">PARQTEL_SECTION_KEY</code>) also works.</p></div></div>
 
-      <h2 id="env">Environment variables</h2>
+      <h2 id="sample">Sample config</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>[server]
+bind_address = "0.0.0.0:8080"
+grpc_bind_address = "0.0.0.0:4317"   # OTLP gRPC; "" disables
+max_connections = 1024
+shutdown_timeout_secs = 30
+flush_interval_secs = 5
+alert_interval_secs = 15
+retention_interval_secs = 3600
+grpc_concurrency_limit = 64
+index_persist_interval_secs = 2
+
+[storage]
+backend = "parquet"
+data_dir = "data"
+block_duration_secs = 7200        # 2 hours
+max_rows_per_block = 1000000
+compression = "zstd"               # zstd | snappy | lz4 | none
+compression_level = 1              # optional zstd level (1-22); unset = codec default
+retention_days = 7
+compaction_interval_secs = 3600
+row_group_size = 100000
+compaction_max_merge_blocks = 12
+compaction_max_merges_per_pass = 8
+
+[logs]
+data_dir = "data/logs"
+block_duration_secs = 1800         # 30 minutes
+max_rows_per_block = 200000
+compression = "zstd"
+compression_level = 1
+retention_days = 3
+compaction_interval_secs = 3600
+row_group_size = 20000
+compaction_max_merge_blocks = 12
+compaction_max_merges_per_pass = 8
+
+[ingest]
+max_body_size = 10485760           # 10 MB
+wal_enabled = true                 # metrics AND traces WAL
+log_wal_enabled = true             # logs WAL
+wal_sync_mode = "interval"         # none | interval | always
+wal_sync_interval_ms = 1000
+wal_max_segment_bytes = 67108864   # 64 MiB
+max_inflight_flushes = 4           # requires wal_enabled
+rotator_shards = 4                 # 1-256
+
+[ingest.tail_sampling]
+keep_errors = true
+# slow_trace_ms = 1000
+sampling_ratio = 1.0
+# [ingest.tail_sampling.per_service.noisy-service]
+# keep_errors = false
+# sampling_ratio = 0.05
+
+[query]
+max_series = 1000
+max_samples_per_series = 10000
+timeout_secs = 30
+lookback_delta_ns = 300000000000   # 5 minutes (Prometheus default)
+
+[ui]
+enabled = true
+
+[telemetry]
+log_level = "info"
+log_format = "text"                # text | json
+otlp_enabled = false               # export Parqtel's own traces + SLIs
+otlp_endpoint = "http://127.0.0.1:4317"
+otlp_trace_level = "info"          # independent of log_level
+export_interval_secs = 30
+profiling_enabled = false          # /debug/pprof/*; 404 while disabled
+profiling_frequency = 99           # Hz, 1-1000
+
+[alerts]
+rules_dir = "rules"
+noise_window_firings = 30
+refinement_enabled = true
+noise_suppression_threshold = 0.7
+
+[alerts.presets]
+mode = "auto"                      # auto | all | off
+include = []
+exclude = []
+
+[k8s_provider]
+enabled = false
+bind_address = "0.0.0.0:6443"
+cache_expiry_secs = 30
+query_timeout_secs = 10
+max_concurrent = 10
+tls_secret_name = "parqtel-provider-tls"</code></pre></div>
+
+      <h2 id="server">[server]</h2>
       <table>
-        <thead><tr><th>Variable</th><th>Description</th><th>Default</th></tr></thead>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code class="inline">PARQTEL_CONFIG</code></td><td>Path to TOML config file</td><td><code class="inline">config/default.toml</code></td></tr>
-          <tr><td><code class="inline">PARQTEL_BIND</code></td><td>TCP bind address</td><td><code class="inline">0.0.0.0:8080</code></td></tr>
-          <tr><td><code class="inline">PARQTEL_DATA_DIR</code></td><td>Data directory</td><td><code class="inline">data</code></td></tr>
-          <tr><td><code class="inline">RUST_LOG</code></td><td>Log level / filter</td><td><code class="inline">info</code></td></tr>
-          <tr><td><code class="inline">PARQTEL__STORAGE__COMPRESSION</code></td><td>Compression codec</td><td><code class="inline">zstd</code></td></tr>
-          <tr><td><code class="inline">PARQTEL__STORAGE__RETENTION_DAYS</code></td><td>Retention period</td><td><code class="inline">7</code></td></tr>
+          <tr><td><code class="inline">bind_address</code></td><td>String</td><td><code class="inline">"0.0.0.0:8080"</code></td><td>TCP address to listen on. Cannot be empty.</td></tr>
+          <tr><td><code class="inline">grpc_bind_address</code></td><td>String</td><td><code class="inline">"0.0.0.0:4317"</code></td><td>OTLP gRPC listener; empty string disables.</td></tr>
+          <tr><td><code class="inline">max_connections</code></td><td>Integer</td><td><code class="inline">1024</code></td><td>Maximum simultaneous TCP connections.</td></tr>
+          <tr><td><code class="inline">shutdown_timeout_secs</code></td><td>Integer</td><td><code class="inline">30</code></td><td>Seconds to wait for in-flight requests during graceful shutdown.</td></tr>
+          <tr><td><code class="inline">flush_interval_secs</code></td><td>Integer</td><td><code class="inline">5</code></td><td>Background tick that checks whether a block has reached its duration. Bounds how <em>late</em> a duration-triggered flush can be — not how often blocks are written.</td></tr>
+          <tr><td><code class="inline">alert_interval_secs</code></td><td>Integer</td><td><code class="inline">15</code></td><td>Seconds between alert-rule evaluation cycles.</td></tr>
+          <tr><td><code class="inline">retention_interval_secs</code></td><td>Integer</td><td><code class="inline">3600</code></td><td>Seconds between retention sweeps. Lower it if a sweep visibly stalls endpoints; raise it on very large indexes.</td></tr>
+          <tr><td><code class="inline">grpc_concurrency_limit</code></td><td>Integer</td><td><code class="inline">64</code></td><td>Maximum concurrent OTLP exports per gRPC connection. Without it one client can monopolise the ingest mutex that HTTP exporters also queue on.</td></tr>
+          <tr><td><code class="inline">index_persist_interval_secs</code></td><td>Integer</td><td><code class="inline">2</code></td><td>How often the block-index sidecar is written. Mutations mark it dirty and are batched, so this bounds how long a block can sit in memory before the sidecar catches up. Lower it if you restart often.</td></tr>
         </tbody>
       </table>
 
-      <h2 id="sample">Sample config</h2>
-      <p>The TOML file mirrors the <code class="inline">PARQTEL__*</code> env surface. Equivalent nested keys:</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>bind = "0.0.0.0:8080"
-data_dir = "data"
+      <h2 id="storage">[storage] — metrics <em>and</em> traces</h2>
+      <p>Traces have no configuration block of their own; they reuse <code class="inline">[storage]</code> entirely. Full detail in <a href="storage.html#config">the storage page</a>.</p>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">backend</code></td><td>String</td><td><code class="inline">"parquet"</code></td><td>Only <code class="inline">"parquet"</code> is registered.</td></tr>
+          <tr><td><code class="inline">data_dir</code></td><td>Path</td><td><code class="inline">"data"</code></td><td>Metric <em>and trace</em> blocks, the metrics sidecar, and both WALs.</td></tr>
+          <tr><td><code class="inline">block_duration_secs</code></td><td>Integer</td><td><code class="inline">7200</code></td><td>Time span of a single block.</td></tr>
+          <tr><td><code class="inline">max_rows_per_block</code></td><td>Integer</td><td><code class="inline">1000000</code></td><td>Row cap. Also the pre-check that flushes <em>before</em> a batch would exceed it.</td></tr>
+          <tr><td><code class="inline">compression</code></td><td>String</td><td><code class="inline">"zstd"</code></td><td><code class="inline">zstd</code> · <code class="inline">snappy</code> · <code class="inline">lz4</code> · <code class="inline">none</code>.</td></tr>
+          <tr><td><code class="inline">compression_level</code></td><td>Integer</td><td>unset</td><td>zstd 1–22. Unset uses the codec default. Rejected for the other codecs rather than silently ignored. Lower levels encode faster and compress less — use a low level for frequently rewritten blocks.</td></tr>
+          <tr><td><code class="inline">retention_days</code></td><td>Integer</td><td><code class="inline">7</code></td><td>Retention for metrics and traces.</td></tr>
+          <tr><td><code class="inline">compaction_interval_secs</code></td><td>Integer</td><td><code class="inline">3600</code></td><td>Interval between compaction passes; floored at 60 s.</td></tr>
+          <tr><td><code class="inline">row_group_size</code></td><td>Integer</td><td><code class="inline">100000</code></td><td>Must be &gt; 0 and ≤ <code class="inline">max_rows_per_block</code>. <strong>This is what row-group pruning depends on</strong> — a too-large value silently costs query time, which is why it is validated.</td></tr>
+          <tr><td><code class="inline">compaction_max_merge_blocks</code></td><td>Integer</td><td><code class="inline">12</code></td><td>Max source blocks merged into one compacted block. Too few and the small-block population grows faster than compaction removes it.</td></tr>
+          <tr><td><code class="inline">compaction_max_merges_per_pass</code></td><td>Integer</td><td><code class="inline">8</code></td><td>Max merges one cycle performs, across all signals. Bounds the disk I/O a single cycle can take.</td></tr>
+        </tbody>
+      </table>
 
-[storage]
-data_dir = "data"
-logs_dir = "data/logs"
-compression = "zstd"        # zstd | snappy | lz4
-retention_days = 7
-logs_retention_days = 3
+      <h2 id="logs">[logs]</h2>
+      <p>Same shape as <code class="inline">[storage]</code> minus <code class="inline">backend</code>, with these defaults: <code class="inline">data_dir = "data/logs"</code>, <code class="inline">block_duration_secs = 1800</code>, <code class="inline">max_rows_per_block = 200000</code>, <code class="inline">row_group_size = 20000</code>, <code class="inline">retention_days = 3</code>. Validation delegates to the same shared rule set, so the two blocks cannot drift apart.</p>
 
-[query]
-max_series = 500
-max_samples_per_series = 5000
+      <h2 id="ingest">[ingest]</h2>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">max_body_size</code></td><td>Integer</td><td><code class="inline">10485760</code></td><td>Maximum request body size (10 MB). Applied to both axum's default body limit and a request-body-limit layer, and used to derive gRPC message limits, so HTTP and gRPC cannot disagree.</td></tr>
+          <tr><td><code class="inline">wal_enabled</code></td><td>Boolean</td><td><code class="inline">true</code></td><td>WAL for metrics <strong>and traces</strong>. Bounds crash loss to the sync interval instead of the whole block window. A WAL that cannot be opened <strong>fails startup</strong>. Also gates the background flush worker.</td></tr>
+          <tr><td><code class="inline">log_wal_enabled</code></td><td>Boolean</td><td><code class="inline">true</code></td><td>WAL for logs.</td></tr>
+          <tr><td><code class="inline">wal_sync_mode</code></td><td>String</td><td><code class="inline">"interval"</code></td><td><code class="inline">none</code> (write only — survives a process crash, not machine loss) · <code class="inline">interval</code> (periodic fsync) · <code class="inline">always</code> (fsync per record).</td></tr>
+          <tr><td><code class="inline">wal_sync_interval_ms</code></td><td>Integer</td><td><code class="inline">1000</code></td><td>fsync period in <code class="inline">interval</code> mode. Clamped to a 1 ms floor.</td></tr>
+          <tr><td><code class="inline">wal_max_segment_bytes</code></td><td>Integer</td><td><code class="inline">67108864</code></td><td>Size at which the WAL rolls to a new segment (64 MiB).</td></tr>
+          <tr><td><code class="inline">max_inflight_flushes</code></td><td>Integer</td><td><code class="inline">4</code></td><td>Max block encodes in flight for the background flush worker, which also bounds its queue. A full queue encodes inline, so backpressure degrades to synchronous. <strong>Requires <code class="inline">wal_enabled</code></strong>.</td></tr>
+          <tr><td><code class="inline">rotator_shards</code></td><td>Integer</td><td><code class="inline">4</code></td><td>Metrics writer shards, clamped 1–256. Shards merge into one block, so block count, query fan-out and durability are unchanged; it costs one writer buffer per shard. Raise only where <code class="inline">parqtel_ingest_lock_wait_seconds</code> shows real contention.</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">See <a href="durability.html">Durability &amp; recovery</a> for the commit protocol these knobs participate in.</p>
 
-[telemetry]
-log_format = "json"         # json | text</code></pre></div>
-      <div class="callout info"><div class="c-ic">↗</div><div><p>See the canonical <code class="inline">config/default.toml</code> in the repository for the full, versioned schema.</p></div></div>
+      <h3>[ingest.tail_sampling]</h3>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">keep_errors</code></td><td>Boolean</td><td><code class="inline">true</code></td><td>Keep traces containing ERROR-status spans.</td></tr>
+          <tr><td><code class="inline">slow_trace_ms</code></td><td>Integer</td><td><code class="inline">null</code></td><td>Keep traces whose server spans exceed this duration. Unset disables the rule.</td></tr>
+          <tr><td><code class="inline">sampling_ratio</code></td><td>Float</td><td><code class="inline">1.0</code></td><td>Fraction of remaining traces to keep (0.0–1.0, validated).</td></tr>
+          <tr><td><code class="inline">per_service</code></td><td>Table</td><td><code class="inline">{}</code></td><td>Per-service overrides; each entry <strong>fully replaces</strong> the global policy for that service.</td></tr>
+        </tbody>
+      </table>
 
-      <h2 id="alerts">Alerting</h2>
-      <p>Alerts are defined as YAML rules evaluated by a background loop (every 15s). Rules support threshold and anomaly detection and flow through a state machine: <code class="inline">Inactive → Pending → Firing → Resolved</code>, with noise scoring to cut alert fatigue.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>route: demo
-rules:
-  - name: high_error_rate
-    expr: rate(http_requests_total{status="500"}[5m]) > 0.05
-    for: 2m
-    severity: critical
-    annotations:
-      summary: "Error rate above 5% for {{ $labels.service }}"</code></pre></div>
-      <p>Manage rules at runtime via <code class="inline">/api/v1/rules</code> (GET/POST/PUT/DELETE) and acknowledge/resolve via <code class="inline">/api/v1/alerts/:id/...</code>. See the <a href="api.html#alerts">API reference</a>.</p>
+      <h2 id="query">[query]</h2>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">max_series</code></td><td>Integer</td><td><code class="inline">1000</code></td><td>Maximum time series returned per query. Enforced on both the plan and the AST path.</td></tr>
+          <tr><td><code class="inline">max_samples_per_series</code></td><td>Integer</td><td><code class="inline">10000</code></td><td>Maximum samples per series.</td></tr>
+          <tr><td><code class="inline">timeout_secs</code></td><td>Integer</td><td><code class="inline">30</code></td><td>Query execution timeout; also applied as an HTTP middleware timeout.</td></tr>
+          <tr><td><code class="inline">lookback_delta_ns</code></td><td>Integer</td><td><code class="inline">300000000000</code></td><td>Instant-query lookback in nanoseconds (5 minutes, the Prometheus default). Alert evaluation uses the same window.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="telemetry">[telemetry]</h2>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">log_level</code></td><td>String</td><td><code class="inline">"info"</code></td><td>Log filter: <code class="inline">trace</code>, <code class="inline">debug</code>, <code class="inline">info</code>, <code class="inline">warn</code>, <code class="inline">error</code>.</td></tr>
+          <tr><td><code class="inline">log_format</code></td><td>String</td><td><code class="inline">"text"</code></td><td><code class="inline">text</code> or <code class="inline">json</code>. Anything else fails validation.</td></tr>
+          <tr><td><code class="inline">otlp_enabled</code></td><td>Boolean</td><td><code class="inline">false</code></td><td>Export Parqtel's own traces and SLI metrics over OTLP/gRPC.</td></tr>
+          <tr><td><code class="inline">otlp_endpoint</code></td><td>String</td><td><code class="inline">"http://127.0.0.1:4317"</code></td><td>Collector endpoint. <code class="inline">http://</code> selects plaintext gRPC; <code class="inline">https://</code> selects TLS.</td></tr>
+          <tr><td><code class="inline">otlp_trace_level</code></td><td>String</td><td><code class="inline">"info"</code></td><td>Minimum span level exported — independent of <code class="inline">log_level</code>, so trace export survives a raised console level.</td></tr>
+          <tr><td><code class="inline">export_interval_secs</code></td><td>Integer</td><td><code class="inline">30</code></td><td>SLI metric push interval.</td></tr>
+          <tr><td><code class="inline">profiling_enabled</code></td><td>Boolean</td><td><code class="inline">false</code></td><td>Enable <code class="inline">/debug/pprof/{profile,summary,memory}</code>; they return <code class="inline">404</code> while disabled. Restrict them with a NetworkPolicy.</td></tr>
+          <tr><td><code class="inline">profiling_frequency</code></td><td>Integer</td><td><code class="inline">99</code></td><td>CPU sampling frequency in Hz (1–1000).</td></tr>
+        </tbody>
+      </table>
+      <div class="callout"><div class="c-ic">↗</div><div><p>When <code class="inline">otlp_enabled = true</code> but the OTLP SDK fails to initialise (an unreachable collector, say), the server logs a warning and continues with console logs only — ingestion is never blocked by self-telemetry.</p></div></div>
+
+      <h2 id="ui">[ui]</h2>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">enabled</code></td><td>Boolean</td><td><code class="inline">true</code></td><td>Serve the embedded console at <code class="inline">/ui</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="alerts">[alerts]</h2>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">rules_dir</code></td><td>String</td><td><code class="inline">"rules"</code></td><td>Directory of alert rule YAML files. Loaded non-recursively at startup and watched for changes.</td></tr>
+          <tr><td><code class="inline">noise_window_firings</code></td><td>Integer</td><td><code class="inline">30</code></td><td>Number of firings in the window used to calculate the noise score.</td></tr>
+          <tr><td><code class="inline">refinement_enabled</code></td><td>Boolean</td><td><code class="inline">true</code></td><td>Automatic alert refinement.</td></tr>
+          <tr><td><code class="inline">noise_suppression_threshold</code></td><td>Float</td><td><code class="inline">0.7</code></td><td>Noise suppression threshold (0.0–1.0). Higher = more suppression.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>[alerts.presets]</h3>
+      <p>Built-in alert packs embedded in the binary at compile time. Pack keys: <code class="inline">kubernetes</code>, <code class="inline">coredns</code>, <code class="inline">external-secrets</code>, <code class="inline">service-red</code>, <code class="inline">parqtel</code>.</p>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">mode</code></td><td>String</td><td><code class="inline">"auto"</code></td><td><code class="inline">auto</code> (activate a pack when its canary metrics appear) · <code class="inline">all</code> (activate every selected pack at startup) · <code class="inline">off</code> (never load built-ins).</td></tr>
+          <tr><td><code class="inline">include</code></td><td>List or comma-separated string</td><td><code class="inline">[]</code></td><td>Include-only pack keys. Wins over <code class="inline">exclude</code> when both are set (a warning is logged). Unknown keys are logged and ignored.</td></tr>
+          <tr><td><code class="inline">exclude</code></td><td>List or comma-separated string</td><td><code class="inline">[]</code></td><td>Pack keys to skip; applied only when <code class="inline">include</code> is empty.</td></tr>
+        </tbody>
+      </table>
+      <p>Activation is <strong>insert-if-absent</strong>, and once activated a pack never deactivates — so a rule from <code class="inline">rules_dir</code>, or a disable/delete via the API, always wins over the built-in.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>export PARQTEL__ALERTS__PRESETS__MODE=auto
+export PARQTEL__ALERTS__PRESETS__INCLUDE=kubernetes,parqtel
+export PARQTEL__ALERTS__PRESETS__EXCLUDE=service-red</code></pre></div>
+
+      <h3>[alerts.notifications]</h3>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">dedup_flush_interval_secs</code></td><td>Integer</td><td><code class="inline">300</code></td><td>Deduplication flush interval.</td></tr>
+          <tr><td><code class="inline">max_concurrent_sends</code></td><td>Integer</td><td><code class="inline">10</code></td><td>Max concurrent webhook sends.</td></tr>
+          <tr><td><code class="inline">send_timeout_secs</code></td><td>Integer</td><td><code class="inline">30</code></td><td>Webhook send timeout.</td></tr>
+          <tr><td><code class="inline">self_monitoring_failure_threshold</code></td><td>Float</td><td><code class="inline">0.5</code></td><td>Self-monitoring failure threshold.</td></tr>
+          <tr><td><code class="inline">routes</code></td><td>Array</td><td><code class="inline">[]</code></td><td>Routing rules: <code class="inline">name</code>, <code class="inline">match_severity</code>, <code class="inline">match_labels</code>, <code class="inline">webhook_url</code>, <code class="inline">repeat_minutes</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>[alerts.postmortem]</h3>
+      <table>
+        <thead><tr><th>Key</th><th>Default</th><th>Key</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">enabled</code></td><td><code class="inline">true</code></td><td><code class="inline">min_duration_minutes</code></td><td><code class="inline">5</code></td></tr>
+          <tr><td><code class="inline">auto_draft</code></td><td><code class="inline">true</code></td><td><code class="inline">min_severity</code></td><td><code class="inline">"warning"</code></td></tr>
+          <tr><td><code class="inline">postmortem_delay_minutes</code></td><td><code class="inline">5</code></td><td><code class="inline">max_knowledge_entries</code></td><td><code class="inline">1000</code></td></tr>
+          <tr><td><code class="inline">template_path</code></td><td><code class="inline">""</code></td><td><code class="inline">auto_publish_notion</code></td><td><code class="inline">false</code></td></tr>
+          <tr><td><code class="inline">auto_publish_gdocs</code></td><td><code class="inline">false</code></td><td><code class="inline">auto_publish_slack</code></td><td><code class="inline">true</code></td></tr>
+          <tr><td><code class="inline">auto_create_jira_actions</code></td><td><code class="inline">false</code></td><td colspan="2"></td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="k8s">[k8s_provider]</h2>
+      <p>The optional Kubernetes custom metrics API server (external metrics for HPA and <code class="inline">kubectl top</code>-style queries).</p>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">enabled</code></td><td>Boolean</td><td><code class="inline">false</code></td><td>Enable the provider.</td></tr>
+          <tr><td><code class="inline">bind_address</code></td><td>String</td><td><code class="inline">"0.0.0.0:6443"</code></td><td>API service address.</td></tr>
+          <tr><td><code class="inline">cache_expiry_secs</code></td><td>Integer</td><td><code class="inline">30</code></td><td>Metric cache TTL.</td></tr>
+          <tr><td><code class="inline">query_timeout_secs</code></td><td>Integer</td><td><code class="inline">10</code></td><td>Query timeout to Parqtel storage.</td></tr>
+          <tr><td><code class="inline">max_concurrent</code></td><td>Integer</td><td><code class="inline">10</code></td><td>Max concurrent queries.</td></tr>
+          <tr><td><code class="inline">tls_secret_name</code></td><td>String</td><td><code class="inline">"parqtel-provider-tls"</code></td><td>TLS certificate secret name.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="env">Environment variables</h2>
+      <p>Prefix <code class="inline">PARQTEL__</code>, separator <code class="inline">__</code>.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code># Server
+export PARQTEL__SERVER__BIND_ADDRESS="0.0.0.0:9090"
+export PARQTEL__SERVER__GRPC_BIND_ADDRESS="0.0.0.0:4317"
+export PARQTEL__SERVER__MAX_CONNECTIONS=2048
+export PARQTEL__SERVER__FLUSH_INTERVAL_SECS=10
+export PARQTEL__SERVER__RETENTION_INTERVAL_SECS=1800
+export PARQTEL__SERVER__INDEX_PERSIST_INTERVAL_SECS=5
+
+# Storage
+export PARQTEL__STORAGE__DATA_DIR="/var/lib/parqtel/data"
+export PARQTEL__STORAGE__COMPRESSION="zstd"
+export PARQTEL__STORAGE__COMPRESSION_LEVEL=1
+export PARQTEL__STORAGE__RETENTION_DAYS=14
+export PARQTEL__STORAGE__BLOCK_DURATION_SECS=3600
+# Row-group pruning only works when the row group fits inside a block.
+export PARQTEL__STORAGE__ROW_GROUP_SIZE=50000
+
+# Logs
+export PARQTEL__LOGS__DATA_DIR="/var/lib/parqtel/logs"
+export PARQTEL__LOGS__RETENTION_DAYS=7
+export PARQTEL__LOGS__BLOCK_DURATION_SECS=1800
+
+# Ingest / write-ahead log
+export PARQTEL__INGEST__MAX_BODY_SIZE=20971520
+export PARQTEL__INGEST__ROTATOR_SHARDS=8
+export PARQTEL__INGEST__WAL_ENABLED=true
+export PARQTEL__INGEST__LOG_WAL_ENABLED=true
+export PARQTEL__INGEST__WAL_SYNC_INTERVAL_MS=1000
+export PARQTEL__INGEST__TAIL_SAMPLING__SAMPLING_RATIO=0.5
+
+# Query
+export PARQTEL__QUERY__TIMEOUT_SECS=60
+export PARQTEL__QUERY__MAX_SERIES=5000
+export PARQTEL__QUERY__LOOKBACK_DELTA_NS=300000000000
+
+# Telemetry
+export PARQTEL__TELEMETRY__LOG_LEVEL="debug"
+export PARQTEL__TELEMETRY__LOG_FORMAT=json
+
+# Alerts
+export PARQTEL__ALERTS__RULES_DIR="/etc/parqtel/rules"
+export PARQTEL__ALERTS__NOISE_SUPPRESSION_THRESHOLD=0.8
+export PARQTEL__ALERTS__PRESETS__MODE=auto</code></pre></div>
+
+      <h2 id="cli">CLI</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>parqtel [OPTIONS] [COMMAND]
+
+Options:
+  -c, --config &lt;PATH&gt;      Path to TOML config file  [env: PARQTEL_CONFIG]
+  -b, --bind &lt;ADDRESS&gt;     TCP bind address          [env: PARQTEL_BIND]
+  -d, --data-dir &lt;PATH&gt;    Data directory            [env: PARQTEL_DATA_DIR]
+      --log-level &lt;LEVEL&gt;  Log level override        [env: RUST_LOG]
+  -h, --help                 Print help
+  -V, --version              Print version
+
+Commands:
+  serve    Start the HTTP server (default)
+  compact  Run one compaction pass and exit
+  inspect  Print a storage summary as JSON
+  export   Export metric data to CSV
+            --metric &lt;NAME&gt; --start &lt;RFC3339&gt; --end &lt;RFC3339&gt; --output &lt;PATH&gt;</code></pre></div>
+      <p class="muted">There is no WAL, replay or index-rebuild CLI command — recovery happens automatically at startup.</p>
+
+      <h2 id="alert-rules">Alert rule YAML</h2>
+      <p>One rule per <code class="inline">---</code> document under <code class="inline">rules_dir</code>, loaded non-recursively:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>id: http-error-rate-high          # unique, stable — the alert instance prefix
+name: HTTP error rate high
+signal: metrics                   # metrics | logs | traces (default: metrics)
+query: "rate(http_errors_total[5m])"
+condition:
+  type: threshold                 # only "threshold" is implemented
+  operator: ">"                  # > >= < <= == !=
+  value: 0.5                     # errors/sec — tune to your traffic profile
+  for_duration_secs: 300         # must hold this long before Pending → Firing
+severity: critical               # critical | warning | info
+labels:
+  team: platform
+annotations:
+  summary: "HTTP error rate above 0.5/sec"
+  runbook: "https://wiki.example.com/runbooks/http-errors"
+enabled: true
+noise_suppression_threshold: 0.7  # 0.0-1.0, higher = more suppression</code></pre></div>
+      <p>The evaluation loop parses each enabled rule's <code class="inline">query</code>, executes it over a trailing <code class="inline">query.lookback_delta_ns</code> window, and thresholds the <strong>last sample of every result series</strong> — one alert instance per series, fingerprinted by <code class="inline">id</code> plus the series' labels. Two consequences:</p>
+      <ol>
+        <li><strong>No cross-metric arithmetic.</strong> A rule query is a single selector with an optional aggregation. Ratios such as <code class="inline">errors / requests</code> cannot be expressed — threshold absolute rates or window counts instead.</li>
+        <li><strong><code class="inline">histogram_quantile</code> is unavailable</strong> in alert rules: the alert loop uses the query plan path, not the AST engine that powers interactive queries. Use <code class="inline">_sum</code> rate proxies for latency-style rules.</li>
+      </ol>
+
+      <h3>Recording rules</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>name: http:requests:rate5m
+expression: "rate(http_requests_total[5m])"
+interval_secs: 60
+labels:
+  aggregation: "recording_rule"</code></pre></div>
+
+      <h3>Pipelines</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>name: nginx-access-logs
+enabled: true
+stages:
+  - name: parse
+    type: preprocessor
+    config:
+      pattern: '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent'
+  - name: extract_metrics
+    type: metric_extractor
+    config:
+      metrics:
+        - name: nginx_requests_total
+          type: counter
+          value_field: status</code></pre></div>
+
+      <h2 id="validation">Validation</h2>
+      <p>Everything is checked at startup, and all errors are reported together:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>Error: server.bind_address cannot be empty;
+       storage.compression must be one of: zstd, snappy, lz4, none;
+       storage.row_group_size must be within 1..=1000000 (max_rows_per_block);
+       telemetry.log_format must be 'text' or 'json';
+       ingest.tail_sampling.sampling_ratio must be within [0.0, 1.0]</code></pre></div>
+      <p>Note what is rejected rather than silently accepted: a <code class="inline">row_group_size</code> of 0 or above <code class="inline">max_rows_per_block</code> (which would disable row-group pruning), and a <code class="inline">compression_level</code> set for a codec that ignores it.</p>
+      <div class="callout"><div class="c-ic">↗</div><div><p>Canonical source: <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/CONFIGURATION.md"><code class="inline">docs/CONFIGURATION.md</code></a> in the repository.</p></div></div>
     </main>
   </div>
 
@@ -127,11 +451,11 @@ rules:
     <div class="container">
       <div class="footer-grid">
         <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
-        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="query-functions.html">Query Functions</a><a href="screenshots.html">UI Screenshots</a><a href="api-explorer.html">API Explorer</a></div>
-        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
-        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
       </div>
-      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
     </div>
   </footer>
   <script src="../assets/js/site.js"></script>

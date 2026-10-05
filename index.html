@@ -45,7 +45,7 @@
       <div>
         <span class="eyebrow">Open Source · Rust · Apache-2.0</span>
         <h1>Observability that fits in a&nbsp;single binary.</h1>
-        <p class="lede">Parqtel streams OpenTelemetry metrics, logs, and traces into compressed Apache&nbsp;Parquet — with a Prometheus-compatible query API, a Grafana datasource, built-in alerting, and 7 AI-native MCP servers.</p>
+        <p class="lede">Parqtel streams OpenTelemetry metrics, logs, and traces into compressed Apache&nbsp;Parquet — with a Prometheus-compatible query API, a Grafana datasource, built-in alerting, and MCP servers for AI-native investigation.</p>
         <div class="hero-cta">
           <a class="btn btn-primary" href="docs/getting-started.html">
             Get started
@@ -54,11 +54,12 @@
           <a class="btn btn-ghost" href="docs/architecture.html">View architecture</a>
         </div>
         <div class="hero-note">
-          <span><span class="dot"></span> ~15&nbsp;MB distroless image</span>
-          <span><span class="dot"></span> 10–20× storage reduction</span>
+          <span><span class="dot"></span> ~15&nbsp;MB scratch image</span>
+          <span><span class="dot"></span> Crash-safe write-ahead log</span>
           <span><span class="dot"></span> Drop-in Grafana/Prometheus</span>
         </div>
         <div class="badges" style="margin-top:20px">
+          <span class="badge">v0.3.1</span>
           <span class="badge">Apache-2.0</span>
           <span class="badge">Docker · GHCR</span>
           <span class="badge">Helm (OCI)</span>
@@ -117,7 +118,12 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
         <div class="card">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></div>
           <h3>Minimal footprint</h3>
-          <p>Single static binary, ~15&nbsp;MB distroless image, zero external datastore. Runs on edge ARM boxes or a single pod.</p>
+          <p>Single static binary in a ~15&nbsp;MB <code class="inline">FROM scratch</code> image — no shell, no package manager, no external datastore. Runs on edge ARM boxes or a single pod.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l4 6h-8l4-6z"/><path d="M4 12l8 3 8-3"/><path d="M5 18l7 3 7-3"/></svg></div>
+          <h3>Crash-safe writes</h3>
+          <p>A write-ahead log acknowledges a request the moment the record is durable, and replays what the last block did not flush — before it starts listening again.</p>
         </div>
         <div class="card">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
@@ -147,7 +153,7 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
         <div class="card">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9zM3 9h1M3 15h1M20 9h1M20 15h1M9 3v1M15 3v1M9 20v1M15 20v1"/></svg></div>
           <h3>AI-native (MCP)</h3>
-          <p>7 Model Context Protocol servers give LLMs direct, typed tool access for automated incident response.</p>
+          <p>Seven Model Context Protocol servers. <code class="inline">parqtel-mcp-parqtel</code> gives an agent 7 live tools to query telemetry directly.</p>
         </div>
       </div>
     </div>
@@ -236,6 +242,7 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
         <div class="card"><h3>Log blocks</h3><p>30-minute windows, up to 200K rows. Retained 3 days by default.</p></div>
         <div class="card"><h3>Compaction</h3><p>Small blocks merge automatically (hourly); row-group stats enable time-range pruning.</p></div>
       </div>
+      <div class="center" style="margin-top:24px"><a class="btn btn-ghost" href="docs/storage.html">Read the storage engine deep dive</a></div>
     </div>
   </section>
 
@@ -245,19 +252,19 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
       <div class="section-head">
         <span class="eyebrow">AI Incident Response</span>
         <h2>Give your LLM the keys to the war room</h2>
-        <p>Parqtel ships 7 Model Context Protocol servers. An agent can notify, investigate, write an RCA, resolve, and draft the postmortem — without glue code.</p>
+        <p>Parqtel ships 7 Model Context Protocol servers over Streamable HTTP. <code class="inline">parqtel-mcp-parqtel</code> is fully live: an agent can run metric queries, search logs, and inspect alert history directly. The six integration servers declare their tool schemas but are not yet wired to their providers.</p>
       </div>
       <div class="diagram-wrap">
         <img src="assets/img/mcp-flow.svg" alt="AI-driven incident response flow">
       </div>
       <div class="grid grid-4" style="margin-top:26px">
-        <div class="card"><h3>Slack · 3001</h3><p>Alerts, RCA updates, incident channels.</p></div>
-        <div class="card"><h3>PagerDuty · 3002</h3><p>Incidents, notes, on-call lookup.</p></div>
-        <div class="card"><h3>Jira · 3003</h3><p>Issues, RCA comments, action items.</p></div>
-        <div class="card"><h3>Notion · 3004</h3><p>Incident &amp; postmortem pages.</p></div>
-        <div class="card"><h3>Discord · 3005</h3><p>Alert embeds &amp; RCA threads.</p></div>
-        <div class="card"><h3>Google Docs · 3006</h3><p>Postmortem docs &amp; sharing.</p></div>
-        <div class="card"><h3>Parqtel · 3007</h3><p>Query its own metrics &amp; logs.</p></div>
+        <div class="card"><h3>Slack · 3001</h3><p>Alerts, RCA updates, incident channels. <em>Metadata only</em></p></div>
+        <div class="card"><h3>PagerDuty · 3002</h3><p>Incidents, notes, on-call lookup. <em>Metadata only</em></p></div>
+        <div class="card"><h3>Jira · 3003</h3><p>Issues, RCA comments, action items. <em>Metadata only</em></p></div>
+        <div class="card"><h3>Notion · 3004</h3><p>Incident &amp; postmortem pages. <em>Metadata only</em></p></div>
+        <div class="card"><h3>Discord · 3005</h3><p>Alert embeds &amp; RCA threads. <em>Metadata only</em></p></div>
+        <div class="card"><h3>Google Docs · 3006</h3><p>Postmortem docs &amp; sharing. <em>Metadata only</em></p></div>
+        <div class="card"><h3>Parqtel · 3007</h3><p>Query its own metrics &amp; logs. <strong>7 live tools</strong></p></div>
         <div class="card"><h3>+ core</h3><p>Shared JSON-RPC, rate limiting, schemas.</p></div>
       </div>
       <div class="center" style="margin-top:24px"><a class="btn btn-ghost" href="docs/mcp.html">Explore the MCP servers</a></div>
@@ -279,10 +286,12 @@ curl <span class="p">"http://localhost:9090/api/v1/query?query=http_requests_tot
             <pre><code>docker run -d \
   --name parqtel \
   -p 8080:8080 \
-  -v parqtel_data:/var/lib/parqtel \
-  parqtel/parqtel:latest
+  -p 4317:4317 \
+  -v parqtel_data:/data \
+  ghcr.io/parqtel/parqtel-oss:0.3.1
 
-curl http://localhost:8080/health   # {"status":"ok"}</code></pre>
+curl http://localhost:8080/health   # {"status":"ok"}
+curl http://localhost:8080/ready    # {"status":"ready"}</code></pre>
           </div>
         </div>
         <div>
@@ -350,8 +359,8 @@ cargo build --release && ./target/release/parqtel serve</code></pre>
         </div>
       </div>
       <div class="footer-bottom">
-        <span>© 2025 Parqtel. Apache-2.0 licensed.</span>
-        <span>Built with Rust · Axum · Apache Parquet</span>
+        <span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span>
+        <span>Docs track <a href="docs/release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span>
       </div>
     </div>
   </footer>

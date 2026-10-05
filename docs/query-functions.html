@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Query Functions · Parqtel Docs</title>
-  <meta name="description" content="PromQL-compatible query functions in Parqtel: label matchers, range aggregations, rate/irate/increase, histogram_quantile, transforms, ranking, grouping, and constraints.">
+  <meta name="description" content="The PromQL surface in Parqtel: 12 aggregations, 91 functions, 15 binary operators, label matchers and set operators — with the exact semantics that differ from Prometheus, and how result limits are enforced.">
   <link rel="icon" href="../assets/img/logo.svg">
   <link rel="stylesheet" href="../assets/css/site.css">
 </head>
@@ -28,132 +28,160 @@
 
   <div class="container docs-layout">
     <aside class="sidebar">
-      <div class="group-label">Reference</div>
-      <a href="api.html">API Reference</a>
-      <a href="query-functions.html">Query Functions</a>
-      <a href="mcp.html">MCP Servers</a>
-      <a href="faq.html">FAQ</a>
-      <div class="group-label">Functions</div>
-      <a href="query-functions.html#matchers">Label matchers</a>
-      <a href="query-functions.html#aggregations">Range aggregations</a>
-      <a href="query-functions.html#range">Range functions</a>
-      <a href="query-functions.html#histogram">Histogram</a>
-      <a href="query-functions.html#transforms">Instant transforms</a>
-      <a href="query-functions.html#ranking">Ranking</a>
-      <a href="query-functions.html#grouping">Grouping</a>
-      <a href="query-functions.html#label-replace">label_replace</a>
-      <a href="query-functions.html#constraints">Constraints</a>
-      <a href="query-functions.html#unsupported">Not yet supported</a>
       <div class="group-label">Learn</div>
       <a href="architecture.html">Architecture</a>
-      <a href="getting-started.html">Get Started</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
       <a href="deployment.html">Deployment</a>
-          <div class="group-label">UI</div>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
       <a href="screenshots.html">Screenshots</a>
-      <a href="api-explorer.html">API Explorer</a>
+      <a href="api-explorer.html">API explorer</a>
     </aside>
 
     <main class="docs-main">
       <h1>Query Functions</h1>
-      <p class="lead">Parqtel serves a Prometheus-compatible query API at <code class="inline">/api/v1/query</code> (instant) and <code class="inline">/api/v1/query_range</code> (range). Examples below use <code class="inline">localhost:9090</code>.</p>
+      <p class="lead">Parqtel implements <strong>91 functions</strong>, <strong>12 aggregations</strong>, <strong>15 binary operators</strong> and all four label matchers. This page lists the surface and is explicit about where the semantics differ from Prometheus.</p>
+
+      <div class="callout info"><div class="c-ic">ℹ</div><div><p>A <strong>conformance corpus of 88 → 98 cases</strong> gates semantic changes to the query engine, so the divergences below are characterised behaviour rather than accidental drift.</p></div></div>
+
+      <h2 id="engines">Two engines, one dispatcher</h2>
+      <p>Not every query goes down the same path. A classifier decides per query:</p>
+      <ul>
+        <li><strong>Any aggregation always takes the AST path.</strong> The legacy engine treats aggregations as per-series downsamplers and mis-parses <code class="inline">sum(x) by (l)</code>.</li>
+        <li>Anything containing a <strong>binary operator</strong>, or a call <strong>outside the legacy 20-function list</strong>, also takes the AST path.</li>
+        <li>Everything else goes <code class="inline">parse → QueryPlan → execute</code> — the fast path with the lowest overhead.</li>
+      </ul>
+      <p>Both paths share the same storage layer, the same limit enforcement and the same blocking-pool offload. The AST path's entire CPU stage runs inside a single <code class="inline">spawn_blocking</code> (regression-tested by <code class="inline">test_query_evaluation_does_not_block_the_async_worker</code>); Parquet decode sits behind a 16-permit semaphore with the permit acquired <em>before</em> spawning.</p>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>Because two paths exist, a few functions behave differently depending on which one a query selects — see <a href="#divergences">Semantic divergences</a>.</p></div></div>
 
       <h2 id="matchers">Label matchers</h2>
-      <p>Supported in every selector inside <code class="inline">{}</code>. The special label <code class="inline">__name__</code> matches the metric name.</p>
-      <table>
-        <thead><tr><th>Operator</th><th>Example</th><th>Meaning</th></tr></thead>
-        <tbody>
-          <tr><td><code class="inline">=</code></td><td><code class="inline">{method="GET"}</code></td><td>Exact equality</td></tr>
-          <tr><td><code class="inline">!=</code></td><td><code class="inline">{status!="500"}</code></td><td>Not equal</td></tr>
-          <tr><td><code class="inline">=~</code></td><td><code class="inline">{host=~"api-.*"}</code></td><td>Regex match (RE2)</td></tr>
-          <tr><td><code class="inline">!~</code></td><td><code class="inline">{host!~"api-.*"}</code></td><td>Regex not match</td></tr>
-        </tbody>
-      </table>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>metric_name{key="value"}            # exact
+metric_name{key!="value"}           # not equal
+metric_name{key=~"re.*x"}           # regex match
+metric_name{key!~"re.*x"}           # regex non-match</code></pre></div>
+      <p>Regexes are compiled once per request and shared across every row examined, not rebuilt per row.</p>
 
-      <h2 id="aggregations">Range aggregations</h2>
-      <p>Applied per time-step window; require a <code class="inline">step</code> on range queries. <code class="inline">by</code>/<code class="inline">without</code> grouping is supported.</p>
-      <table>
-        <thead><tr><th>Function</th><th>Example</th><th>Meaning</th></tr></thead>
-        <tbody>
-          <tr><td><code class="inline">avg</code></td><td><code class="inline">avg(http_requests_total{method="GET"})</code></td><td>Mean across window</td></tr>
-          <tr><td><code class="inline">sum</code></td><td><code class="inline">sum(http_requests_total{} by (service))</code></td><td>Sum, optional grouping</td></tr>
-          <tr><td><code class="inline">min</code> / <code class="inline">max</code></td><td><code class="inline">max(memory_bytes{service="api"})</code></td><td>Min/max across window</td></tr>
-          <tr><td><code class="inline">count</code></td><td><code class="inline">count(http_requests_total{status="500"})</code></td><td>Number of points</td></tr>
-          <tr><td><code class="inline">stddev</code> / <code class="inline">stdvar</code></td><td><code class="inline">stddev(response_time_ms{service="checkout"})</code></td><td>Std deviation / variance</td></tr>
-        </tbody>
-      </table>
+      <h2 id="aggregations">Aggregations</h2>
+      <p><code class="inline">sum</code> · <code class="inline">avg</code> · <code class="inline">min</code> · <code class="inline">max</code> · <code class="inline">count</code> · <code class="inline">stddev</code> · <code class="inline">stdvar</code> · <code class="inline">count_values</code> · <code class="inline">topk</code> · <code class="inline">bottomk</code> · <code class="inline">quantile</code> · <code class="inline">group</code></p>
+      <p>Both <code class="inline">by</code> and <code class="inline">without</code> are supported in either position:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>sum by (service, method) (rate(http_requests_total[5m]))
+sum(rate(http_requests_total[5m])) by (service)
+topk(10, http_requests_total)
+quantile by (le) (0.95, http_request_duration_seconds_bucket)
+sum without (instance) (http_requests_total)</code></pre></div>
+      <p>Aggregation groups are keyed by a label fingerprint, and each distinct group's label set is built once rather than per series. Series labels are shared behind an <code class="inline">Arc</code> and cloned once per <em>block</em>, not once per <em>step</em>.</p>
 
       <h2 id="range">Range functions</h2>
+      <p><code class="inline">rate</code> · <code class="inline">irate</code> · <code class="inline">increase</code> · <code class="inline">delta</code> · <code class="inline">idelta</code></p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>rate(http_requests_total[5m])        # per-second average over the window
+increase(http_requests_total[1h])    # total growth over the window
+irate(http_requests_total[1m])       # last sample's instantaneous rate</code></pre></div>
+
+      <h3>Over-time aggregations</h3>
+      <p><code class="inline">avg_over_time</code> · <code class="inline">min_over_time</code> · <code class="inline">max_over_time</code> · <code class="inline">sum_over_time</code> · <code class="inline">count_over_time</code> · <code class="inline">quantile_over_time</code> · <code class="inline">mad_over_time</code> · <code class="inline">stddev_over_time</code> · <code class="inline">stdvar_over_time</code> · <code class="inline">last_over_time</code> · <code class="inline">present_over_time</code></p>
+
+      <h3>Prediction and change detection</h3>
+      <p><code class="inline">changes</code> · <code class="inline">resets</code> · <code class="inline">deriv</code> · <code class="inline">predict_linear</code> · <code class="inline">holt_winters</code> · <code class="inline">double_exponential_smoothing</code></p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>predict_linear(node_filesystem_avail_bytes[6h], 4 * 3600) &lt; 0
+resets(process_start_time_seconds[1h]) &gt; 3</code></pre></div>
+
+      <h2 id="math">Math and transforms</h2>
       <table>
-        <thead><tr><th>Function</th><th>Example</th><th>Meaning</th></tr></thead>
+        <thead><tr><th>Group</th><th>Functions</th></tr></thead>
         <tbody>
-          <tr><td><code class="inline">rate</code></td><td><code class="inline">rate(http_requests_total{service="api"}[5m])</code></td><td>Per-second increase of a counter (≥2 samples)</td></tr>
-          <tr><td><code class="inline">irate</code></td><td><code class="inline">irate(http_requests_total{service="api"}[1m])</code></td><td>Instantaneous rate (last two samples)</td></tr>
-          <tr><td><code class="inline">increase</code></td><td><code class="inline">increase(http_requests_total{status="200"}[5m])</code></td><td>Total increase (reset-safe)</td></tr>
-          <tr><td><code class="inline">delta</code></td><td><code class="inline">delta(temperature_celsius{sensor="room1"}[10m])</code></td><td>Last − first (gauges; can be negative)</td></tr>
+          <tr><td>Element-wise math</td><td><code class="inline">abs ceil floor sqrt exp ln log2 log10 sgn</code></td></tr>
+          <tr><td>Trigonometry</td><td><code class="inline">sin cos tan asin acos atan sinh cosh tanh asinh acosh atanh deg rad</code></td></tr>
+          <tr><td>Rounding &amp; clamping</td><td><code class="inline">round clamp clamp_min clamp_max</code></td></tr>
+          <tr><td>Constants</td><td><code class="inline">pi time vector scalar timestamp</code></td></tr>
         </tbody>
       </table>
-      <div class="callout warn"><div class="c-ic">⚠</div><div><p>The range selector <code class="inline">[5m]</code> is parsed for Prometheus syntax compatibility, but the actual window is controlled by the query <code class="inline">step</code>.</p></div></div>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>clamp_max(rate(http_errors_total[5m]) / rate(http_requests_total[5m]), 1.0)
+round(node_memory_MemAvailable_bytes / 1024 / 1024)</code></pre></div>
 
-      <h2 id="histogram">Histogram function</h2>
+      <h2 id="labels">Label manipulation</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>label_replace(up, "host", "$1", "instance", "([^:]+):.*")
+label_join(up, "target", "/", "service", "instance")
+label_del(http_requests_total, "debug_flag")</code></pre></div>
+
+      <h2 id="ranking">Ranking and sorting</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>sort(http_requests_total)
+sort_desc(sum by (service) (rate(http_errors_total[5m])))
+sort_by_label(http_requests_total, "service")
+sort_by_label_desc(http_requests_total, "service")</code></pre></div>
+
+      <h2 id="absence">Absence detection</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>absent(up{job="checkout"})
+absent_over_time(node_up[10m])</code></pre></div>
+
+      <h2 id="histograms">Histograms</h2>
+      <p><code class="inline">histogram_quantile</code> · <code class="inline">histogram_count</code> · <code class="inline">histogram_sum</code> · <code class="inline">histogram_avg</code> · <code class="inline">histogram_stddev</code> · <code class="inline">histogram_stdvar</code> · <code class="inline">histogram_fraction</code></p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>histogram_quantile(0.95, sum by (le, service) (rate(http_request_duration_seconds_bucket[5m])))</code></pre></div>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><code class="inline">histogram_quantile</code> works in <strong>interactive queries</strong> but <strong>not in alert rules</strong> — the alert loop uses the query plan path, not the AST engine. Use <code class="inline">_sum</code> rate proxies for alerting on latency.</p></div></div>
+
+      <h2 id="operators">Binary operators and set operators</h2>
+      <p><strong>Arithmetic:</strong> <code class="inline">+ - * / % ^</code> &nbsp;·&nbsp; <strong>Comparison:</strong> <code class="inline">== != &gt; &lt; &gt;= &lt;=</code> &nbsp;·&nbsp; <strong>Set:</strong> <code class="inline">and or unless</code></p>
+      <p>Vector matching modifiers: <code class="inline">on(...)</code>, <code class="inline">ignoring(...)</code>, <code class="inline">group_left</code>, <code class="inline">group_right</code>, and the <code class="inline">bool</code> suffix.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code># Error ratio, matched on service
+sum by (service) (rate(http_errors_total[5m]))
+  / on (service)
+sum by (service) (rate(http_requests_total[5m]))
+
+# Only return series whose paired series is also present
+http_requests_total and on (service) up == 1
+
+# Keep right-hand labels
+node_load1{job="node"}
+  * on (instance) group_left (env, dc)
+node_uname_info{job="node"}</code></pre></div>
+
+      <h2 id="divergences">Semantic divergences</h2>
+      <p>Behaviours that differ from upstream Prometheus. Each is characterised by the conformance corpus.</p>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><ul style="margin:6px 0 0">
+        <li><strong><code class="inline">rate</code> skips edge extrapolation on the AST path</strong> — it passes a zero window, so rates computed in a binary-operator expression are not extrapolated to the window edges. The same query without a binary operator will be.</li>
+        <li><strong><code class="inline">timestamp(x)</code> returns the evaluation timestamp</strong>, not the sample's own timestamp.</li>
+        <li><strong><code class="inline">deriv</code> is a two-point slope</strong>, not the ordinary-least-squares fit Prometheus uses.</li>
+        <li><strong><code class="inline">count_values</code>, <code class="inline">quantile</code>, <code class="inline">topk</code> and <code class="inline">bottomk</code> ignore <code class="inline">by</code>/<code class="inline">without</code>.</strong></li>
+        <li><strong>The <code class="inline">@</code> modifier is rejected outright</strong> rather than parsed and ignored.</li>
+        <li><strong>Duration units exclude Prometheus' <code class="inline">y</code> and <code class="inline">M</code>.</strong></li>
+        <li><strong><code class="inline">log(v, base)</code> is absent</strong> — use <code class="inline">log2</code> or <code class="inline">log10</code>.</li>
+        <li>Also absent: <code class="inline">ts_of_*_over_time</code>, <code class="inline">limitk</code>, <code class="inline">limit_ratio</code>, <code class="inline">info</code>.</li>
+      </ul></div></div>
+
+      <h2 id="limits">Result limits</h2>
       <table>
-        <thead><tr><th>Function</th><th>Example</th><th>Meaning</th></tr></thead>
+        <thead><tr><th>Setting</th><th>Default</th><th>Behaviour when exceeded</th></tr></thead>
         <tbody>
-          <tr><td><code class="inline">histogram_quantile</code></td><td><code class="inline">histogram_quantile(0.95, http_request_duration_ms)</code></td><td>φ-quantile from OTel cumulative histogram buckets (φ ∈ (0,1))</td></tr>
+          <tr><td><code class="inline">query.max_series</code></td><td><code class="inline">1000</code></td><td rowspan="2"><strong>Silent truncation.</strong> No error, no error status, no warning field — the response is simply shorter.</td></tr>
+          <tr><td><code class="inline">query.max_samples_per_series</code></td><td><code class="inline">10000</code></td></tr>
         </tbody>
       </table>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>Clients must detect truncation themselves, from <code class="inline">totalSeriesCount</code> (the pre-truncation matched count) and <code class="inline">volume_summary</code>. Logs and traces <em>do</em> return an explicit <code class="inline">truncated</code> boolean. And because two engine paths exist, the two keep <strong>different</strong> samples when truncating: the AST path keeps the <strong>oldest</strong> N, the legacy plan path keeps the <strong>first N in scan order</strong>. Both are enforced on the plan and AST paths alike.</p></div></div>
+      <p>Limits that <em>do</em> error, by contrast: an oversized body returns <code class="inline">413</code>; a request exceeding <code class="inline">query.timeout_secs</code> returns <code class="inline">408</code>; plan validation failures return <code class="inline">400</code>.</p>
 
-      <h2 id="transforms">Instant transforms</h2>
-      <p>Applied to the last value in the window; no <code class="inline">step</code> required.</p>
+      <h2 id="other">Logs, traces and pipelines</h2>
+      <p>Metrics PromQL is only one of three query surfaces.</p>
       <table>
-        <thead><tr><th>Function</th><th>Example</th></tr></thead>
+        <thead><tr><th>Surface</th><th>Grammar</th><th>Endpoint</th></tr></thead>
         <tbody>
-          <tr><td><code class="inline">abs</code></td><td><code class="inline">abs(net_bytes_delta{interface="eth0"})</code></td></tr>
-          <tr><td><code class="inline">ceil</code> / <code class="inline">floor</code></td><td><code class="inline">ceil(cpu_fraction{host="web-01"})</code></td></tr>
-          <tr><td><code class="inline">round</code></td><td><code class="inline">round(latency_ms, 5)</code> · <code class="inline">round(cpu_fraction, 0.01)</code></td></tr>
-          <tr><td><code class="inline">clamp_min</code> / <code class="inline">clamp_max</code></td><td><code class="inline">clamp_min(cpu_usage{}, 0)</code> · <code class="inline">clamp_max(cpu_usage{}, 100)</code></td></tr>
+          <tr><td><strong>ParqtelQL</strong></td><td>Lenient boolean log/span search: terms, phrases, wildcards, <code class="inline">-exclusion</code>, <code class="inline">OR/AND/NOT</code>, field operators, ranges, <code class="inline">field:*</code> exists, <code class="inline">body:</code> contains, severity thresholds</td><td><code class="inline">/api/v1/logs</code>, <code class="inline">/v1/traces/search</code></td></tr>
+          <tr><td><strong>PQL pipelines</strong></td><td><code class="inline">fetch … | filter … | parse … | stats … by … interval=… | limit | correlate traces|logs window=…</code></td><td><code class="inline">POST /v1/search</code></td></tr>
         </tbody>
       </table>
+      <p>Log and trace queries are <em>prepared</em> once per request — regexes compiled, needles lowercased — and scanned with an allocation-free ASCII-case-folded substring matcher. Trace predicates are pushed down into the scan <em>before</em> the result cap, so a filter never loses matches to truncation. See <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/PQL_GUIDE.md">the ParqtelQL guide</a>.</p>
 
-      <h2 id="ranking">Ranking functions</h2>
-      <table>
-        <thead><tr><th>Function</th><th>Example</th><th>Meaning</th></tr></thead>
-        <tbody>
-          <tr><td><code class="inline">topk</code></td><td><code class="inline">topk(5, http_requests_total{status="200"})</code></td><td>Top N by last sample value</td></tr>
-          <tr><td><code class="inline">bottomk</code></td><td><code class="inline">bottomk(3, cpu_usage{env="prod"})</code></td><td>Bottom N by last sample value</td></tr>
-        </tbody>
-      </table>
-
-      <h2 id="grouping">Grouping clauses</h2>
-      <p><code class="inline">by</code> keeps only the listed labels; <code class="inline">without</code> drops the listed labels. Compatible with <code class="inline">sum</code>, <code class="inline">avg</code>, <code class="inline">min</code>, <code class="inline">max</code>, <code class="inline">count</code>, <code class="inline">stddev</code>, <code class="inline">stdvar</code>.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>sum(http_requests_total{} by (service, status))
-sum without (instance, pod) (http_requests_total)</code></pre></div>
-
-      <h2 id="label-replace">label_replace</h2>
-      <p>Applies a regex substitution from a source label into a destination label. <code class="inline">$1</code>, <code class="inline">$2</code> refer to capture groups.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>label_replace(cpu_usage, "short_host", "$1", "host", "([^.]+).*")</code></pre></div>
-
-      <h2 id="constraints">Constraints</h2>
-      <table>
-        <thead><tr><th>Constraint</th><th>Value</th></tr></thead>
-        <tbody>
-          <tr><td>Max time range</td><td>30 days</td></tr>
-          <tr><td>Max series returned</td><td>500 (dev) — <code class="inline">query.max_series</code></td></tr>
-          <tr><td>Max samples per series</td><td>5000 (dev) — <code class="inline">query.max_samples_per_series</code></td></tr>
-          <tr><td>Quantile range</td><td>open interval (0.0, 1.0)</td></tr>
-          <tr><td>rate/irate/increase minimum</td><td>≥ 2 samples in window</td></tr>
-          <tr><td>Step durations</td><td>s, m, h, d</td></tr>
-        </tbody>
-      </table>
-
-      <h2 id="unsupported">Not yet supported</h2>
-      <ul>
-        <li>Binary operators between two metrics (<code class="inline">metric_a / metric_b</code>)</li>
-        <li><code class="inline">predict_linear</code>, <code class="inline">deriv</code>, <code class="inline">idelta</code>, <code class="inline">absent</code>, <code class="inline">changes</code>, <code class="inline">resets</code></li>
-        <li>Time functions: <code class="inline">time()</code>, <code class="inline">timestamp()</code>, <code class="inline">year()</code>, <code class="inline">month()</code>, …</li>
-        <li>Subqueries (<code class="inline">metric[5m:1m]</code>)</li>
-        <li><code class="inline">offset</code> modifier (<code class="inline">metric offset 5m</code>)</li>
-        <li><code class="inline">label_join</code></li>
-      </ul>
+      <div class="callout"><div class="c-ic">↗</div><div><p>Related: <a href="api.html">API reference</a> · <a href="configuration.html#query">Query configuration</a> · <a href="operations.html#lookback">Instant-query lookback</a></p></div></div>
     </main>
   </div>
 
@@ -161,11 +189,11 @@ sum without (instance, pod) (http_requests_total)</code></pre></div>
     <div class="container">
       <div class="footer-grid">
         <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
-        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="query-functions.html">Query Functions</a><a href="screenshots.html">UI Screenshots</a><a href="api-explorer.html">API Explorer</a></div>
-        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
-        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
       </div>
-      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
     </div>
   </footer>
   <script src="../assets/js/site.js"></script>

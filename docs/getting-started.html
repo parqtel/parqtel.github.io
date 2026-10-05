@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Getting Started · Parqtel Docs</title>
-  <meta name="description" content="Install Parqtel, send your first OpenTelemetry metric and log, and query it back with the Prometheus-compatible API.">
+  <meta name="description" content="Install Parqtel, send your first OTLP metric, log and trace, and query them back. Covers Docker, Homebrew, Docker Compose, Helm and a source build. Tracks release v0.3.1.">
   <link rel="icon" href="../assets/img/logo.svg">
   <link rel="stylesheet" href="../assets/css/site.css">
 </head>
@@ -28,113 +28,150 @@
 
   <div class="container docs-layout">
     <aside class="sidebar">
-      <div class="group-label">Get Started</div>
-      <a href="getting-started.html">Introduction</a>
-      <a href="getting-started.html#install">Install</a>
-      <a href="getting-started.html#first-metric">First metric</a>
-      <a href="getting-started.html#first-log">First log</a>
-      <a href="getting-started.html#query">Query it back</a>
-      <a href="getting-started.html#visualize">Visualize</a>
       <div class="group-label">Learn</div>
       <a href="architecture.html">Architecture</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
       <a href="deployment.html">Deployment</a>
       <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
       <div class="group-label">Reference</div>
-      <a href="api.html">API Reference</a>
-      <a href="query-functions.html">Query Functions</a>
-      <a href="mcp.html">MCP Servers</a>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
       <a href="faq.html">FAQ</a>
-          <div class="group-label">UI</div>
+      <div class="group-label">Console</div>
       <a href="screenshots.html">Screenshots</a>
-      <a href="api-explorer.html">API Explorer</a>
+      <a href="api-explorer.html">API explorer</a>
     </aside>
 
     <main class="docs-main">
       <h1>Getting Started</h1>
-      <p class="lead">Your first 15 minutes with Parqtel — from install to ingesting metrics, logs, and querying them back.</p>
+      <p class="lead">From zero to a queryable metric, log and trace — about fifteen minutes. These instructions track release <strong>v0.3.1</strong> (October 2026).</p>
+
+      <div class="callout info"><div class="c-ic">↗</div><div><p>Parqtel ships as a single binary and an OCI image published to GitHub Container Registry (<code class="inline">ghcr.io/parqtel/parqtel-oss</code>), multi-arch for <code class="inline">linux/amd64</code> and <code class="inline">linux/arm64</code>. There is no Docker Hub mirror.</p></div></div>
 
       <h2 id="install">1 · Install</h2>
-      <p>The fastest path is Docker. If you don't have it, build from source (Rust 1.86+).</p>
-      <h3>Docker</h3>
+      <h3>Docker (recommended)</h3>
       <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>docker run -d \
   --name parqtel \
   -p 8080:8080 \
-  -v parqtel_data:/var/lib/parqtel \
-  parqtel/parqtel:latest
+  -p 4317:4317 \
+  -v parqtel_data:/data \
+  ghcr.io/parqtel/parqtel-oss:0.3.1
 
-curl http://localhost:8080/health   # {"status":"ok"}</code></pre></div>
+curl http://localhost:8080/health    # {"status":"ok"}
+curl http://localhost:8080/ready     # {"status":"ready"}</code></pre></div>
+      <p><code class="inline">/health</code> is a static liveness check. <code class="inline">/ready</code> actually reads block-index metadata and returns <code class="inline">503</code> when the storage path is unusable — use it for Kubernetes readiness and load-balancer health checks.</p>
 
       <h3>Homebrew (Linux &amp; macOS)</h3>
       <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>brew tap parqtel/tap
 brew install parqtel-oss
 parqtel --version</code></pre></div>
-      <p class="muted">The formula pulls the release binary from <code class="inline">parqtel-oss</code> GitHub releases (linux-amd64/arm64, darwin-amd64/arm64) — no local Rust toolchain needed.</p>
+      <p class="muted">The formula pulls the release binary from the <code class="inline">parqtel-oss</code> GitHub releases (<code class="inline">linux/amd64</code>, <code class="inline">linux/arm64</code>, <code class="inline">darwin/amd64</code>, <code class="inline">darwin/arm64</code>) — no local Rust toolchain required.</p>
+
+      <h3>From source</h3>
+      <p>Minimum supported Rust version (MSRV) is <strong>1.87</strong>.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>git clone https://github.com/parqtel/parqtel-oss.git
+cd parqtel-oss
+cargo build --release          # target/release/parqtel
+./target/release/parqtel serve</code></pre></div>
 
       <h3>Docker Compose (full stack)</h3>
-      <p>Spins up Parqtel, Grafana, Prometheus, and a load generator. MCP servers are present but commented out — enable the ones you need after adding tokens to <code class="inline">.env</code>.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>make dev-setup        # copies .env.example → .env, then `docker compose up -d`
+      <p>Brings up Parqtel, Grafana, Prometheus (scraping Parqtel) and a load generator. MCP servers are present but commented out.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>make dev-setup        # copies .env.example → .env, then docker compose up -d
 # or manually:
 cp .env.example .env
 docker compose up -d</code></pre></div>
-      <div class="callout info"><div class="c-ic">ℹ</div><div><p>Compose exposes Parqtel on <code class="inline">:9090</code>, Grafana on <code class="inline">:3000</code>, Prometheus on <code class="inline">:9091</code>. Raw <code class="inline">docker run</code> uses <code class="inline">:8080</code>.</p></div></div>
+      <div class="callout info"><div class="c-ic">ℹ</div><div><p>Compose publishes Parqtel on <code class="inline">:9090</code> (HTTP) and <code class="inline">:4317</code> (OTLP gRPC), Grafana on <code class="inline">:3000</code>, Prometheus on <code class="inline">:9091</code>. A plain <code class="inline">docker run</code> uses <code class="inline">:8080</code>.</p></div></div>
 
-      <h3>From source</h3>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>git clone https://github.com/parqtel/parqtel-oss.git
-cd parqtel-oss
-cargo build --release
-./target/release/parqtel serve</code></pre></div>
-
-      <h2 id="first-metric">2 · Your first metric</h2>
-      <p>Parqtel speaks OTLP. Send a counter with <code class="inline">curl</code> to test ingestion.</p>
+      <h2 id="ingest">2 · Send your first metric</h2>
+      <p>Parqtel speaks OTLP. Point any OpenTelemetry SDK at <code class="inline">:4317</code> (gRPC) or <code class="inline">:8080</code> (HTTP), or post OTLP/JSON directly:</p>
       <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl -X POST http://localhost:8080/v1/metrics/json \
   -H "Content-Type: application/json" \
   -d '{
-    "resourceMetrics": [{
-      "resource": {"attributes": [
-        {"key": "service.name", "value": {"stringValue": "my-web-app"}}]},
-      "scopeMetrics": [{
-        "metrics": [{
-          "name": "http_requests_total",
-          "sum": {"dataPoints": [{
-            "asDouble": 1,
-            "timeUnixNano": "'$(date +%s%N)'",
-            "attributes": [
-              {"key": "method", "value": {"stringValue": "GET"}},
-              {"key": "status", "value": {"stringValue": "200"}}]}]}}]}]}]}'</code></pre></div>
+  "resourceMetrics": [{
+    "resource": {"attributes": [
+      {"key": "service.name", "value": {"stringValue": "my-web-app"}}]},
+    "scopeMetrics": [{
+      "metrics": [{
+        "name": "http_requests_total",
+        "sum": {"isMonotonic": true, "dataPoints": [{
+          "asDouble": 1,
+          "timeUnixNano": "'$(date +%s%N)'",
+          "attributes": [
+            {"key": "method", "value": {"stringValue": "GET"}},
+            {"key": "status", "value": {"stringValue": "200"}}]}]}}]}]}]}'</code></pre></div>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>OTLP/JSON <code class="inline">attributes</code> must be an <strong>array</strong> of <code class="inline">{"key": …, "value": {"stringValue": …}}</code> objects — a plain object map is rejected. Instantly querying a point you just sent only works if its timestamp is inside the 5-minute lookback window (<code class="inline">query.lookback_delta_ns</code>).</p></div></div>
 
-      <h2 id="first-log">3 · Your first log</h2>
-      <p>Logs land in Parquet too, so they stay cheap to search at scale.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl -X POST http://localhost:8080/v1/logs/json \
+      <h2 id="logs-traces">3 · Logs and traces</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code># Log record
+curl -X POST http://localhost:8080/v1/logs/json \
   -H "Content-Type: application/json" \
   -d '{
-    "resourceLogs": [{
-      "resource": {"attributes": [
-        {"key": "service.name", "value": {"stringValue": "my-web-app"}}]},
-      "scopeLogs": [{
-        "logRecords": [{
-          "timeUnixNano": "'$(date +%s%N)'",
-          "severityText": "INFO",
-          "body": {"stringValue": "User logged in successfully"},
-          "attributes": [{"key": "user_id", "value": {"stringValue": "user_123"}}]}]}]}]}'</code></pre></div>
+  "resourceLogs": [{
+    "resource": {"attributes": [
+      {"key": "service.name", "value": {"stringValue": "my-web-app"}}]},
+    "scopeLogs": [{"logRecords": [{
+      "timeUnixNano": "'$(date +%s%N)'",
+      "severityText": "INFO",
+      "body": {"stringValue": "User logged in successfully"},
+      "attributes": [{"key": "user_id", "value": {"stringValue": "user_123"}}]}]}]}]}'
+
+# Server span — this also derives traces_service_{requests,errors,duration_ms}_total
+curl -X POST http://localhost:8080/v1/traces/json \
+  -H "Content-Type: application/json" \
+  -d '{
+  "resourceSpans": [{
+    "resource": {"attributes": [
+      {"key": "service.name", "value": {"stringValue": "my-web-app"}}]},
+    "scopeSpans": [{"spans": [{
+      "traceId": "5b8efff798038103d269b633813fc60c",
+      "spanId": "eee19b7ec3c1b174",
+      "name": "GET /checkout",
+      "kind": 2,
+      "startTimeUnixNano": "'$(date +%s%N)'",
+      "endTimeUnixNano": "'$(date +%s%N)'",
+      "status": {"code": 2}}]}]}]}'</code></pre></div>
 
       <h2 id="query">4 · Query it back</h2>
-      <p>Use the Prometheus-compatible API for instant queries.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl "http://localhost:8080/api/v1/query?query=http_requests_total"
-# logs:
-curl "http://localhost:8080/api/v1/logs?filter=severityText='INFO'"</code></pre></div>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code># Instant PromQL (5-minute lookback)
+curl "http://localhost:8080/api/v1/query?query=http_requests_total"
 
-      <h2 id="visualize">5 · Visualize</h2>
-      <p>Parqtel ships a zero-dependency web console at <code class="inline">/ui</code> — no separate frontend to deploy. Open <code class="inline">http://localhost:8080/ui</code> to explore metrics, logs, traces, and alerts with PromQL autocomplete and a trace waterfall. See it in action in the <a href="screenshots.html">UI screenshots gallery</a>.</p>
-      <p>For production dashboards, add Parqtel as a <strong>Grafana SimpleJSON datasource</strong> pointing at <code class="inline">http://&lt;parqtel&gt;:8080</code>. Your existing Prometheus/Grafana dashboards keep working.</p>
+# Range PromQL
+curl "http://localhost:8080/api/v1/query_range?query=rate(http_requests_total[5m])&amp;start=$(date -d '1 hour ago' +%s)&amp;end=$(date +%s)&amp;step=60"
+
+# Logs (ParqtelQL boolean grammar)
+curl "http://localhost:8080/api/v1/logs?filter=severityText%3D'INFO'"
+
+# Spans
+curl "http://localhost:8080/v1/traces/search?service=my-web-app&amp;limit=20"
+
+# Correlation across signals
+curl "http://localhost:8080/v1/correlate?trace_id=5b8efff798038103d269b633813fc60c"</code></pre></div>
+      <p>Open <code class="inline">http://localhost:8080/ui</code> for the built-in console — an Overview dashboard, a PromQL query builder, log facets, a trace-grouped browse list with waterfall, and an alert stream with an Evidence tab.</p>
+
+      <h2 id="verify">5 · Verify durability</h2>
+      <p>Parqtel acknowledges a write once the row is in the <strong>write-ahead log</strong>, not once the Parquet block is on disk. Crash loss is therefore bounded by <code class="inline">ingest.wal_sync_interval_ms</code> (default 1 s) rather than a whole block window, and whatever the WAL still holds is replayed on startup.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>docker exec parqtel healthcheck ready      # bundled probe binary: liveness|ready
+curl -s localhost:8080/api/v1/stats | jq   # blocks, rows, disk bytes, index size per signal
+curl -s localhost:8080/metrics | grep parqtel_flush | head</code></pre></div>
+      <div class="callout"><div class="c-ic">↗</div><div><p>Read <a href="durability.html">Durability &amp; recovery</a> for the commit ordering, replay behaviour and tuning, and <a href="storage.html">Storage engine</a> for the block and pruning model.</p></div></div>
 
       <h2 id="next">Next steps</h2>
       <ul>
-        <li><a href="configuration.html#alerts">Configure alerting</a> with YAML rules.</li>
-        <li><a href="architecture.html">Understand the storage engine</a> and block model.</li>
-        <li><a href="deployment.html">Move to production</a> with Kubernetes / Helm.</li>
-        <li><a href="mcp.html">Wire up MCP servers</a> for AI incident response.</li>
+        <li><a href="configuration.html">Configuration</a> — the full key reference, environment variables and CLI flags.</li>
+        <li><a href="architecture.html">Architecture</a> — crates, data flow, concurrency model.</li>
+        <li><a href="deployment.html">Deployment</a> — Kubernetes, Helm values, Argo Rollouts, production sizing.</li>
+        <li><a href="api.html">API reference</a> — the complete endpoint inventory, or the interactive <a href="api-explorer.html">API explorer</a>.</li>
+        <li><a href="mcp.html">MCP servers</a> — give an LLM live PromQL, log, trace and alert tools.</li>
+        <li><a href="operations.html">Known issues</a> — the beta caveats worth reading <em>before</em> you deploy.</li>
       </ul>
-      <div class="callout"><div class="c-ic">↗</div><div><p>Stuck? Check the <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting guide</a> or open an issue on GitHub.</p></div></div>
     </main>
   </div>
 
@@ -142,11 +179,11 @@ curl "http://localhost:8080/api/v1/logs?filter=severityText='INFO'"</code></pre>
     <div class="container">
       <div class="footer-grid">
         <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
-        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="query-functions.html">Query Functions</a><a href="screenshots.html">UI Screenshots</a><a href="api-explorer.html">API Explorer</a></div>
-        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
-        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
       </div>
-      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
     </div>
   </footer>
   <script src="../assets/js/site.js"></script>

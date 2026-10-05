@@ -144,7 +144,7 @@ def main():
 
   <footer class="footer"><div class="container">
 {FOOTER}
-    <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+    <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
   </div></footer>
   <script id="spec" type="application/json">{data}</script>
   <script src="../assets/js/site.js"></script>

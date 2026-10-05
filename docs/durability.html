@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Durability &amp; Recovery · Parqtel Docs</title>
+  <meta name="description" content="Parqtel's write-ahead log: record framing, the crash-safe commit protocol, replay and torn-tail recovery, block-index rebuild, per-signal coverage and the tuning knobs that bound crash loss.">
+  <link rel="icon" href="../assets/img/logo.svg">
+  <link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel <small>Docs</small></a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="architecture.html">Architecture</a>
+        <a href="getting-started.html">Get Started</a>
+        <a href="deployment.html">Deploy</a>
+        <a href="mcp.html">MCP</a>
+        <a href="api.html">API</a>
+        <a href="screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="sidebar">
+      <div class="group-label">Learn</div>
+      <a href="architecture.html">Architecture</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
+      <a href="deployment.html">Deployment</a>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API explorer</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>Durability &amp; Recovery</h1>
+      <p class="lead">Parqtel acknowledges a write once the row is in the <strong>write-ahead log</strong>, not once the Parquet block is on disk. This page documents what that guarantee is, how the commit ordering makes it safe at every crash point, and how to bound or widen it.</p>
+
+      <div class="callout info"><div class="c-ic">↗</div><div><p>Implemented in <a href="https://github.com/parqtel/parqtel-oss/blob/main/parqtel-core/src/wal.rs"><code class="inline">parqtel-core/src/wal.rs</code></a> (~880 lines), wired into ingest in <code class="inline">parqtel-ingest/src/service.rs</code> and bootstrapped in <code class="inline">parqtel-server/src/main.rs</code>.</p></div></div>
+
+      <h2 id="problem">The problem it solves</h2>
+      <p>A Parquet block is only durable once its file has been written and renamed. Everything accepted into the in-memory buffer since the last flush is lost on a crash — and with a duration-based block window, that window is measured in <strong>hours</strong> (2 h for metrics by default). For an observability store whose entire purpose is to hold the data you want during an incident, that is the wrong trade.</p>
+      <p>The write-ahead log narrows the exposure from the block window to the fsync interval: <strong>1 second</strong> by default.</p>
+
+      <h2 id="framing">On-disk format</h2>
+      <p>One WAL directory per signal, under <code class="inline">&lt;data_dir&gt;/wal/&lt;signal&gt;/</code>:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>data/
+├── wal/
+│   ├── metrics/   00000000000000000000.wal  …  commit
+│   ├── traces/    00000000000000000000.wal  …  commit
+│   └── logs/      00000000000000000000.wal  …  commit
+├── index.json
+├── *.parquet
+├── logs/
+└── traces/</code></pre></div>
+
+      <h3>Record framing</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>┌──────────────┬──────────────┬───────────────────────────┐
+│ u32 LE length│ u32 LE CRC32 │ payload (JSON, `len` B) │
+│   4 bytes     │   4 bytes    │                           │
+└──────────────┴──────────────┴───────────────────────────┘
+        RECORD_HEADER_LEN = 8 bytes</code></pre></div>
+      <ul>
+        <li><strong>One record per decoded signal value.</strong> Each <code class="inline">Metric</code>, <code class="inline">LogRecord</code> and <code class="inline">Span</code> becomes one JSON record, appended under the rotator lock. The record <em>type</em> is not tagged in the framing — it is a property of the signal directory, supplied by the caller's generic parameter.</li>
+        <li><strong>CRC32 over the payload</strong> detects a torn tail from a crash mid-append.</li>
+        <li><strong>Segments are named <code class="inline">%020d.wal</code></strong> — zero-padded to 20 digits so they sort lexically in sequence order.</li>
+        <li><strong>The commit file</strong> is a plain decimal <code class="inline">u64</code>, written <code class="inline">commit.tmp</code> → rename.</li>
+      </ul>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>What "durable" means here.</strong> Throughout this subsystem, durability means <em>renamed into place</em>. The Parquet block, the <code class="inline">commit</code> file and <code class="inline">index.json</code> are all written tmp-then-rename with <strong>no explicit fsync</strong> and no directory fsync. Only the <strong>WAL segment bytes</strong> get an <code class="inline">fsync</code>/<code class="inline">fdatasync</code>. On a machine loss you may therefore lose a recently written block or commit point even though the WAL itself is intact — the WAL bounds the loss window, it does not make the filesystem a transactional store.</p></div></div>
+      <p class="muted">Every append also flushes the 64 KiB <code class="inline">BufWriter</code> into the page cache (<code class="inline">write(2)</code>), without which a process kill would lose everything still buffered — exactly the case the WAL exists for. A segment must stay under 4 GiB, since the segment sequence occupies the high 32 bits of the position.</p>
+
+      <h3>Positions</h3>
+      <p>A position is <code class="inline">(segment_sequence &lt;&lt; 32) | (byte_offset + 1)</code>. Two properties fall out of this:</p>
+      <ul>
+        <li>It is <strong>monotonic across segments</strong> and comparable without opening any file.</li>
+        <li>It is <strong>1-based</strong> — the first record of the first segment is position 1, not 0. <code class="inline">WalPosition::START</code> is 0 and means "nothing committed"; a 0-based position would make the very first record look already-committed and silently drop it on replay.</li>
+      </ul>
+
+      <h2 id="protocol">The commit protocol</h2>
+      <p>A block flush and the WAL must agree, or a crash either duplicates data or loses it. The sequence is:</p>
+      <ol class="steps">
+        <li><h4>Append and acknowledge</h4><p>Rows are appended to the WAL, then the HTTP request is acknowledged. <code class="inline">append()</code> returns the position that covers the record.</p></li>
+        <li><h4>Snapshot on flush</h4><p>A flush takes rows, snapshotting the WAL position it is about to cover (<code class="inline">covered</code>). The snapshot is taken under the rotator lock, which is also held for the append — so WAL order and writer order are the same total order, and the committed position is provably correct.</p></li>
+        <li><h4>Write and rename the block</h4><p>The Parquet encode runs on <code class="inline">spawn_blocking</code>; the file is written to a temporary name and renamed into place, which is what makes a block atomic.</p></li>
+        <li><h4>Publish, then <em>wait</em> for the sidecar</h4><p><code class="inline">BlockMetadata</code> goes to the index task over an unbounded channel, and the flush <strong>blocks on a tracked durability handle</strong> until the <code class="inline">index.json</code> sidecar has been written and fsynced.</p></li>
+        <li><h4>Commit, then delete</h4><p>Only then is the commit point advanced to <code class="inline">covered</code>. Segments entirely below the commit are deleted.</p></li>
+      </ol>
+
+      <p>The commit file is the single source of truth, and it is advanced <strong>after</strong> the rename, so every crash point is safe. Segments with <code class="inline">seq &lt; commit.segment()</code> are then deleted — never the segment currently being appended to, which is why the on-disk working set stays bounded at roughly one segment plus whatever is uncommitted.</p>
+      <table>
+        <thead><tr><th>Crash after</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td><strong>(1)</strong> append</td><td>Replayed. Nothing on disk yet — <strong>correct</strong>.</td></tr>
+          <tr><td><strong>(2)</strong> snapshot</td><td>Replayed. No block written — <strong>correct</strong>.</td></tr>
+          <tr><td><strong>(3)</strong> rename, before (4)</td><td>The block exists but is not committed, so it is <em>not</em> in the index. The WAL still holds the rows and replay writes them again. The orphan is invisible, so there is exactly <strong>one copy</strong>.</td></tr>
+          <tr><td><strong>(4)</strong> commit, before (5)</td><td>Rows are covered. Replay skips everything at or below the commit, so the leftover segments are discarded rather than duplicated.</td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>Advancing the commit <em>before</em> the rename could lose a block — the one failure a WAL exists to prevent. This ordering is the design.</p></div></div>
+
+      <h3>Failing safe</h3>
+      <p>Step 4 is bounded by <code class="inline">INDEX_DURABILITY_TIMEOUT</code>. A wedged index task must not stall ingest indefinitely, and committing while the index is behind is exactly the window this handshake closes. On timeout — or if the index task is dropped — Parqtel does <strong>not</strong> commit:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>ERROR timed out waiting for the block index to become durable;
+      leaving the WAL uncommitted so the rows are replayed
+
+WARN  index task dropped before the sidecar was persisted;
+      leaving the WAL uncommitted so the rows are replayed</code></pre></div>
+      <p>The cost is a duplicate row after restart, which the index reconciliation and the commit-point skip collapse; the alternative would be data loss.</p>
+
+      <h3>Buffer draining</h3>
+      <p>The in-memory buffer is drained by the rotator when a block becomes <strong>durable</strong>, never when a flush is merely scheduled. Draining early would leave rows in neither the buffer nor any block — invisible to every query until the encode landed.</p>
+
+      <h2 id="replay">Replay and recovery</h2>
+      <p>At startup, for each signal, Parqtel reads the commit point and replays everything above it. <code class="inline">replay()</code> walks segments in order and hands each record to a callback, tracking four counters:</p>
+      <table>
+        <thead><tr><th>Counter</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">records</code></td><td>Records handed to the caller.</td></tr>
+          <tr><td><code class="inline">skipped</code></td><td>Records at or below the commit point (already covered), plus any that fail to deserialise.</td></tr>
+          <tr><td><code class="inline">truncated_bytes</code></td><td>Bytes discarded from the tail of a segment — what a crash mid-append leaves behind.</td></tr>
+          <tr><td><code class="inline">segments_removed</code></td><td>Segments deleted after a successful replay.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Torn tails</h3>
+      <p>The reader stops at the first record that is truncated or fails its CRC, then <code class="inline">set_len</code>s the segment to that boundary and fsyncs, so the next append starts from a clean edge:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>WARN  WAL had a torn tail from a crash; the unusable bytes were dropped
+      signal=metrics bytes=142
+INFO  WAL replay complete
+      signal=metrics records=312 skipped=0 truncated_bytes=0 elapsed=41ms</code></pre></div>
+      <p>A record that frames correctly but fails to deserialise is <em>not</em> a stop condition — stopping there would silently drop every later record — so it is logged and skipped:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>WARN  skipping undecodable WAL record  position=2:14 error=…</code></pre></div>
+      <div class="callout"><div class="c-ic">ℹ</div><div><p><code class="inline">truncated_bytes</code> is usually <strong>0</strong> after a real crash. Writers are opened <em>before</em> replay runs, and opening walks the length fields and rewinds the segment to the last intact boundary — which silently discards a torn tail before the counter can see it. Only a CRC failure, which that rewind does not check, reaches the replay truncation path. The counter is therefore a weak signal; the presence of a block replayed at all is the reliable one.</p></div></div>
+      <p class="muted">A CRC mismatch breaks the rest of <em>that segment</em>, because record offsets cannot be re-synchronised. Later segments are still read — a single corrupt segment costs at most a segment.</p>
+
+      <h3>Idempotency</h3>
+      <p>Replay is not a repair operation — it is a re-ingest. Recovered records are pushed back through the <strong>same public entry points live exporters use</strong> (<code class="inline">ingest_metrics</code> / <code class="inline">ingest_logs</code> / <code class="inline">ingest_spans</code>, which are <code class="inline">pub</code> for exactly this reason), so recovery cannot diverge from the normal path. They land in a fresh block and produce a new covered position.</p>
+      <p>Two consequences worth knowing:</p>
+      <ul>
+        <li><strong>Recovered records are re-appended to the WAL.</strong> Writers are opened before replay, so each recovered row exists twice — at its old position and its new one — until the next commit covers the second. That transiently doubles WAL bytes for the replayed window; it is self-cleaning.</li>
+        <li><strong>Replayed traces run through tail sampling and the RED bridge again.</strong> Sampling is a deterministic <code class="inline">trace_id</code> hash, so the decision is identical and derived metrics are not double-counted in effect — but a 3-span replay does re-derive its <code class="inline">traces_service_*</code> metrics.</li>
+      </ul>
+      <p>The commit-point skip is what prevents the <strong>duplicate</strong> case: a segment whose records are all below the commit is discarded whole rather than replayed.</p>
+
+      <h3>Startup ordering</h3>
+      <p>Replay runs <strong>before the listener binds</strong>, so a recovering instance never accepts traffic on a half-restored dataset. The sequence is: create data directories → load and reconcile each index → open the WALs (failure aborts startup) → build services → start the flush worker → <strong>replay</strong> → build state and router → bind.</p>
+      <p>On shutdown, tasks are aborted, then the rotator is flushed and the flush worker stopped — the worker sender is dropped and its handle awaited, so every in-flight encode finishes. A graceful shutdown cannot leave a block half-written or skip a WAL commit.</p>
+
+      <h3>Startup cost</h3>
+      <p>Replay is proportional to <em>unflushed</em> WAL — so it is slow exactly when the pod is least healthy. That is why the Helm chart exposes <code class="inline">startupProbe</code>: the hardcoded budget was 150 s, an install returning with a large WAL replay exceeds it, gets killed mid-replay, and restarts with an even larger WAL. See <a href="deployment.html#kubernetes">probes</a>.</p>
+
+      <h2 id="index-rebuild">Self-healing block index</h2>
+      <p>Reconciled at startup, in <strong>both</strong> directions, then persisted if anything changed:</p>
+      <ul>
+        <li><strong>Adopt</strong> — block files the index has never seen are recovered from their Parquet footer and added.</li>
+        <li><strong>Drop</strong> — index entries whose file has gone are removed.</li>
+      </ul>
+      <p>When anything was repaired you get one warning per signal:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>WARN  block index did not match the data directory; reconciled from the
+      block files. Metric names may be a range until the block is rewritten
+      by compaction, and recovered blocks have no label dictionary until then.
+      signal=traces adopted=3 dropped=1 unreadable=0</code></pre></div>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>A recovered block carries an <strong>empty</strong> metric-name set, which means "unknown" — not "matches nothing". It stays visible to every query, but name-based pruning does not apply to it until compaction rewrites it with a full flush-time index, and label-value autocomplete stays empty until then.</p></div></div>
+      <p class="muted">Signal detection reads the <strong>schema</strong>, not the filename (<code class="inline">severity_text</code> → Logs, then <code class="inline">metric_kind</code> → Metrics, then <code class="inline">start_time_ns</code> → Traces — the order matters because log blocks also carry a <code class="inline">span_id</code> column). A wrong filename can only cause a block to be <em>missed</em>, never wrongly adopted.</p>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>Trace reconciliation cannot adopt its own blocks.</strong> Trace blocks are written to the parent <code class="inline">data/</code> directory while the trace sidecar lives in <code class="inline">data/traces/</code>, so reconciliation scans a directory that does not hold them. A lost trace index is rebuilt from the WAL replay and the normal flush path, not by adoption.</p></div></div>
+      <p>In the normal case this is one <code class="inline">read_dir</code> and the sidecar is only rewritten when something actually changed.</p>
+
+      <h2 id="coverage">Per-signal coverage</h2>
+      <table>
+        <thead><tr><th>Signal</th><th>WAL directory</th><th>Gated by</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td>Metrics</td><td><code class="inline">&lt;storage.data_dir&gt;/wal/metrics</code></td><td><code class="inline">ingest.wal_enabled</code></td><td><strong>on</strong></td></tr>
+          <tr><td>Traces</td><td><code class="inline">&lt;storage.data_dir&gt;/wal/traces</code></td><td><code class="inline">ingest.wal_enabled</code></td><td><strong>on</strong></td></tr>
+          <tr><td>Logs</td><td><code class="inline">&lt;logs.data_dir&gt;/wal/logs</code></td><td><code class="inline">ingest.log_wal_enabled</code></td><td><strong>on</strong></td></tr>
+        </tbody>
+      </table>
+      <p>Metrics and traces share one switch — they live under the same data directory. Disabling the WAL emits an explicit warning per signal at startup:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>WARN  WAL is disabled for this signal; a crash can lose up to a whole block window</code></pre></div>
+      <div class="callout"><div class="c-ic">↗</div><div><p><strong>A WAL that cannot be opened fails startup.</strong> Continuing would mean accepting data we cannot promise to recover, which is exactly the guarantee the WAL exists to provide.</p></div></div>
+
+      <h2 id="tuning">Tuning</h2>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">ingest.wal_enabled</code></td><td>Boolean</td><td><code class="inline">true</code></td><td>WAL for metrics <em>and</em> traces. <strong>Also gates the background flush worker</strong> — see below.</td></tr>
+          <tr><td><code class="inline">ingest.log_wal_enabled</code></td><td>Boolean</td><td><code class="inline">true</code></td><td>WAL for logs.</td></tr>
+          <tr><td><code class="inline">ingest.wal_sync_mode</code></td><td>String</td><td><code class="inline">interval</code></td><td><code class="inline">none</code> (write only — survives a <em>process</em> crash, not machine loss) · <code class="inline">interval</code> (periodic fsync) · <code class="inline">always</code> (fsync per record). Not <code class="inline">none</code> by default: a default that quietly means "do not sync" is a footgun in a durability feature.</td></tr>
+          <tr><td><code class="inline">ingest.wal_sync_interval_ms</code></td><td>Integer</td><td><code class="inline">1000</code></td><td>How often the WAL is fsynced in <code class="inline">interval</code> mode. <strong>This is your crash-loss bound.</strong> Clamped to a 1 ms floor, so <code class="inline">0</code> means 1 ms, not "never".</td></tr>
+          <tr><td><code class="inline">ingest.wal_max_segment_bytes</code></td><td>Integer</td><td><code class="inline">67108864</code> (64 MiB)</td><td>Size at which the WAL rolls to a new segment. A segment is deleted once the commit passes it, so the on-disk working set stays bounded at roughly one segment plus whatever is uncommitted. A restart reuses the newest segment unless it is already full.</td></tr>
+          <tr><td><code class="inline">ingest.max_inflight_flushes</code></td><td>Integer</td><td><code class="inline">4</code></td><td>Max block encodes in flight, which also bounds the flush queue. <strong>Requires the WAL.</strong></td></tr>
+          <tr><td><code class="inline">ingest.rotator_shards</code></td><td>Integer</td><td><code class="inline">4</code></td><td>Metrics writer shards (1–256). The WAL append happens under the shard lock, so WAL order and writer order are the same total order — the property that makes the committed position provably correct. Shards merge into one block, so block count, query fan-out and durability are unchanged.</td></tr>
+          <tr><td><code class="inline">server.index_persist_interval_secs</code></td><td>Integer</td><td><code class="inline">2</code></td><td>Sidecar debounce. A flush now <em>forces</em> the write rather than waiting for this interval.</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">These are flat fields — there is no nested <code class="inline">[ingest.wal]</code> table. The Helm chart renders <code class="inline">wal_enabled</code>, <code class="inline">log_wal_enabled</code>, <code class="inline">wal_max_segment_bytes</code> and <code class="inline">wal_sync_interval_ms</code>; it does not render <code class="inline">wal_sync_mode</code> or <code class="inline">max_inflight_flushes</code>. Note the chart default <code class="inline">walMaxSegmentBytes: 16777216</code> (16 MiB) <strong>overrides</strong> the binary's 64 MiB default.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code># fsync every 200 ms instead of 1 s — smaller loss window, more IO
+export PARQTEL__INGEST__WAL_SYNC_INTERVAL_MS=200
+export PARQTEL__INGEST__WAL_SYNC_MODE=always      # fsync per record; strongest guarantee
+
+# 16 MiB segments: lower peak disk, more segment churn
+export PARQTEL__INGEST__WAL_MAX_SEGMENT_BYTES=16777216</code></pre></div>
+
+      <h3>The background flush worker requires a WAL</h3>
+      <p>A request that crosses the block cap is acknowledged once the WAL holds its rows rather than after the ~125 ms Parquet encode — on a realistic 7 MiB batch the encode is about 125 ms of a ~300 ms request, and it serialises concurrent requests behind the flush lock.</p>
+      <p>That is only sound <em>with</em> a WAL: without one, an acknowledged-but-unwritten flush is unrecoverable. So with <code class="inline">wal_enabled = false</code> the worker <strong>refuses to start</strong> and metrics flushing falls back to synchronous:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>WARN  metrics WAL is disabled; flushing synchronously so a request is never
+      acknowledged before its data is recoverable</code></pre></div>
+      <p>Degrading to the safe behaviour beats silently weakening durability. <code class="inline">wal_enabled = false</code> remains a legitimate operator choice — just not one that can also have a background flush. <strong>Logs and traces always flush inline</strong>, with or without a WAL.</p>
+
+      <h2 id="observability">Observing durability</h2>
+      <p>There is <strong>no</strong> WAL HTTP endpoint, admin command or CLI flag. Replay outcomes surface in the startup log, and durability pressure shows up through the flush and index metrics:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>INFO  WAL replay complete  signal=metrics records=312 skipped=0 truncated_bytes=0 elapsed_ms=41
+INFO  WAL replay complete  signal=logs   records=0   skipped=0 truncated_bytes=0 elapsed_ms=0
+INFO  WAL replay complete  signal=traces records=18   skipped=0 truncated_bytes=0 elapsed_ms=6
+
+curl -s localhost:8080/metrics | grep -E 'parqtel_(index|flush|ingest_lock)'</code></pre></div>
+      <table>
+        <thead><tr><th>Metric</th><th>Read it for</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">parqtel_index_sidecar_bytes{signal}</code></td><td>Index size on disk — measured, not assumed. See <a href="storage.html#index">storage</a>.</td></tr>
+          <tr><td><code class="inline">parqtel_index_pending_writes{signal}</code></td><td>Mutations queued for the next sidecar write — what the commit handshake is waiting behind.</td></tr>
+          <tr><td><code class="inline">parqtel_index_lock_wait_seconds</code></td><td>Time writers spend waiting on the index lock.</td></tr>
+          <tr><td><code class="inline">parqtel_flush_duration_seconds</code>, <code class="inline">parqtel_flush_inflight</code>, <code class="inline">parqtel_flush_rows_total</code></td><td>Encode cost, worker saturation, block sizes.</td></tr>
+          <tr><td><code class="inline">parqtel_ingest_lock_wait_seconds</code>, <code class="inline">parqtel_ingest_rotator_shards</code></td><td>The WAL append happens under the shard lock, so this is where WAL write cost shows up — measured at <strong>~54 ns mean</strong> over 9 695 acquisitions for metrics (126 ns logs, 1.2 µs traces). Raise <code class="inline">rotator_shards</code> only if this grows.</td></tr>
+        </tbody>
+      </table>
+      <p>Replays across metrics, logs and traces are verified against <code class="inline">SIGKILL</code>-ed containers in the test suite — acknowledged points survive a crash without a graceful shutdown — so this is a tested contract rather than an aspiration.</p>
+
+      <h2 id="upgrade">Upgrading across versions</h2>
+      <p><strong>Rolling back is safe.</strong> Blocks are self-describing Parquet and the previous binary reads them.</p>
+      <p><strong>Rolling forward may not be.</strong> The arrow2 → arrow 59 migration changed the on-disk encoding: Parquet blocks written by arrow2-era builds are unreadable by the current reader. When upgrading across that boundary, wipe the data directory.</p>
+
+      <div class="callout"><div class="c-ic">↗</div><div><p>Related: <a href="storage.html">Storage engine</a> (block model, index, compaction) · <a href="operations.html#known-issues">Known issues</a> · <a href="configuration.html#ingest">Configuration reference</a></p></div></div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
+    </div>
+  </footer>
+  <script src="../assets/js/site.js"></script>
+</body>
+</html>

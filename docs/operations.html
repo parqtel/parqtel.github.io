@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Known Issues &amp; Sizing · Parqtel Docs</title>
+  <meta name="description" content="The beta caveats worth knowing before you deploy Parqtel: unbounded memory buffer, no authentication, instant-query lookback, range-query final step, index reconciliation and the memory sizing formula.">
+  <link rel="icon" href="../assets/img/logo.svg">
+  <link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel <small>Docs</small></a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="architecture.html">Architecture</a>
+        <a href="getting-started.html">Get Started</a>
+        <a href="deployment.html">Deploy</a>
+        <a href="mcp.html">MCP</a>
+        <a href="api.html">API</a>
+        <a href="screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="sidebar">
+      <div class="group-label">Learn</div>
+      <a href="architecture.html">Architecture</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
+      <a href="deployment.html">Deployment</a>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API explorer</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>Known Issues &amp; Sizing</h1>
+      <p class="lead">What a beta user is most likely to hit, what to do about it, and how to size a container. Kept short and specific — if something here is not worth knowing before you deploy, it does not belong here.</p>
+
+      <h2 id="known-issues">Known issues</h2>
+
+      <h3 id="unbounded-buffer">The in-memory buffer is unbounded</h3>
+      <p><strong>Symptom.</strong> Resident memory (<code class="inline">parqtel_process_rss_bytes</code>) grows with ingest rate × <code class="inline">storage.block_duration_secs</code> and does not come down until a block is flushed. A sustained rate that fits at 100 k points/s can OOM at 300 k.</p>
+      <p><strong>Why.</strong> Points are buffered in memory so they are immediately queryable, and flushed to a Parquet block on a timer or at the row cap. There is no maximum size, no byte accounting and no eviction, so the only bound is time. The write-ahead log does not help here: it bounds <em>crash loss</em>, not resident memory.</p>
+      <p><strong>Mitigating now.</strong></p>
+      <ul>
+        <li>Lower <code class="inline">storage.block_duration_secs</code> (default <strong>7200</strong>). This is the strongest lever: buffered points scale directly with it.</li>
+        <li>Watch <code class="inline">parqtel_process_rss_bytes</code> and alert on it.</li>
+        <li>Size the container from the <a href="#sizing">formula below</a> rather than from a default.</li>
+        <li>Set <code class="inline">MALLOC_ARENA_MAX=2</code> and <code class="inline">MALLOC_TRIM_THRESHOLD_=134217728</code> so glibc returns freed arena memory after each flush instead of pinning at the high-water mark.</li>
+      </ul>
+      <p class="muted"><strong>Planned.</strong> <code class="inline">ingest.buffer_max_points</code> / <code class="inline">buffer_max_bytes</code> with an explicit eviction policy and a <code class="inline">parqtel_buffer_dropped_total</code> counter.</p>
+
+      <h3 id="no-auth">No authentication or authorization</h3>
+      <p><strong>Symptom.</strong> Every endpoint, including ingest and the OTLP gRPC port, is unauthenticated. CORS is open (<code class="inline">Any</code> origin).</p>
+      <p><strong>Mitigating now.</strong> Do not expose port <code class="inline">8080</code> (HTTP) or <code class="inline">4317</code> (OTLP gRPC) publicly. Put them behind a reverse proxy or service mesh that terminates TLS and authenticates. The embedded console reads and writes data with the same privileges as the API, so protecting the API protects the console.</p>
+
+      <h3 id="range-final-step">A range query does not evaluate its final partial step</h3>
+      <p><strong>Symptom.</strong> <code class="inline">/api/v1/query_range</code> over <code class="inline">[now-300, now]</code> with <code class="inline">step=60</code> returns nothing for the most recent minute, while the data is plainly there.</p>
+      <p><strong>Why.</strong> Steps are evaluated from <code class="inline">start</code> while <code class="inline">ts &lt; end</code>, so the last instant evaluated is up to one <code class="inline">step</code> before <code class="inline">end</code>. This matches Prometheus.</p>
+      <p><strong>Mitigating now.</strong> Use <code class="inline">step &lt;= 15</code> for a window ending at "now", or end the window at <code class="inline">now - step</code>. An <strong>instant</strong> <code class="inline">/api/v1/query</code> at the same <code class="inline">end</code> does see those samples, through the 5-minute lookback.</p>
+
+      <h3 id="lookback">Instant queries only see the last 5 minutes</h3>
+      <p><strong>Symptom.</strong> An instant query returns no data for a metric that is clearly being ingested and is in the logs.</p>
+      <p><strong>Why.</strong> Instant queries look back <code class="inline">query.lookback_delta_ns</code> (default <strong>300000000000</strong> ns = 5 minutes, the Prometheus default). Anything older is on disk but outside the lookback window.</p>
+      <p><strong>Mitigating now.</strong> Use <code class="inline">/api/v1/query_range</code>, or raise <code class="inline">query.lookback_delta_ns</code>. Raising it costs memory, because recent points are also held in the buffer above. Alert rules evaluate over this same window — so raising it widens what an alert can see.</p>
+
+      <h3 id="log-trace-projection">Log and trace scans decode every column</h3>
+      <p><strong>Symptom.</strong> Wide log or trace queries are slower than the equivalent metric query, and cost more memory than the row counts suggest.</p>
+      <p><strong>Why.</strong> Only the <strong>metrics</strong> scan projects columns (7 of 15); the log and trace decoders read all their columns.</p>
+      <p><strong>Workaround.</strong> Narrow the query window, and use index blocks for pre-filtering rather than scanning everything — <code class="inline">service.name</code> selectors are pushed into the scan.</p>
+
+      <h3 id="index-reconcile">Upgrade and index reconciliation</h3>
+      <p><strong>Symptom.</strong> After a crash or upgrade, a query returns nothing for blocks the index does not know about, or an orphaned block appears on disk.</p>
+      <p><strong>What happens now.</strong> At startup the block index is reconciled against the data directory in both directions: block files the index has never seen are <strong>adopted</strong> (recovered from their Parquet footer), and entries whose file has gone are <strong>dropped</strong>. So a lost or stale <code class="inline">index.json</code> repairs itself. Watch for a <code class="inline">block index did not match the data directory; reconciled</code> warning at startup.</p>
+      <p><strong>Caveat.</strong> A recovered block carries an <strong>empty</strong> metric-name set, which means "unknown" rather than "matches nothing". The block stays visible to every query, but name-based pruning does not apply to it until compaction rewrites it with a full flush-time index. Label-value autocomplete also stays empty for that block until then.</p>
+      <p><strong>Rollback</strong> is safe: blocks are self-describing Parquet and the previous binary reads them. Data written by a newer version may not be readable by an older one — the arrow2 → arrow 59 migration changed the on-disk encoding, and crossing that boundary needs a data-directory wipe.</p>
+
+      <h3 id="alert-limits">Alert rules cannot express cross-metric arithmetic</h3>
+      <p><strong>Symptom.</strong> An alert rule written as <code class="inline">rate(errors_total[5m]) / rate(requests_total[5m])</code> does not work.</p>
+      <p><strong>Why.</strong> The alert loop uses the query <em>plan</em> path, not the AST engine that powers interactive queries. A rule query is a single selector with an optional aggregation (<code class="inline">rate</code>, <code class="inline">increase</code>, <code class="inline">avg</code>/<code class="inline">sum</code>/<code class="inline">min</code>/<code class="inline">max</code>/<code class="inline">count</code> with <code class="inline">by</code>/<code class="inline">without</code>, <code class="inline">topk</code>/<code class="inline">bottomk</code>, <code class="inline">irate</code>, <code class="inline">delta</code>, <code class="inline">round</code>, <code class="inline">abs</code>/<code class="inline">ceil</code>/<code class="inline">floor</code>, <code class="inline">clamp_min</code>/<code class="inline">clamp_max</code>, <code class="inline">label_replace</code>). <code class="inline">histogram_quantile</code> is likewise unavailable there.</p>
+      <p><strong>Workaround.</strong> Threshold absolute rates or window counts. For latency, use a <code class="inline">_sum</code> rate proxy (e.g. seconds-of-flush per second) rather than a quantile. See <a href="configuration.html#alert-rules">the alert rule schema</a>.</p>
+
+      <h3 id="async-flush-needs-wal">Background flushing requires the WAL</h3>
+      <p><strong>Symptom.</strong> <code class="inline">ingest.wal_enabled = false</code> and requests appear to block on flush; the background flush worker never starts.</p>
+      <p><strong>Why.</strong> The worker acknowledges a request once the WAL holds its rows, which is only sound when the rows are already logged. Without a WAL, flushing stays synchronous — still acknowledged only once the block is durable, just slower. This is deliberate: the alternative is acknowledging writes that a crash would lose.</p>
+
+      <div class="callout"><div class="c-ic">↗</div><div><p>Hit something not listed here? That is a bug in the docs as much as in the code — <a href="https://github.com/parqtel/parqtel-oss/issues">open an issue</a>.</p></div></div>
+
+      <h2 id="sizing">Memory sizing</h2>
+      <p>The sizing <em>method</em> below is still the right way to reason about a deployment. The absolute figures were measured on one staging cluster (RKE2, 1 CPU / 3 GiB cgroup) with the built-in self-telemetry (<code class="inline">parqtel_process_rss_bytes</code>) and the embedded CPU profiler. <strong>Re-measure rather than reusing them.</strong></p>
+
+      <h3>Linear model</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>RSS ≈ BASELINE + (KiB_PER_POINT × peak_buffered_points) + FLUSH_TRANSIENT
+
+BASELINE            ≈ 1.15 GiB   runtime, OTel SDK, query engine, block index,
+                                 allocator slack
+KiB_PER_POINT       ≈ 6.3 KiB    slope between the 251k-pt and 98k-pt configs
+FLUSH_TRANSIENT     ≈ 80–140 MiB Arrow record batches + Parquet encode of one block
+
+peak_buffered_points = ingest_rate_pts_per_sec × block_duration_secs</code></pre></div>
+      <p class="muted">The per-point string cloning that originally caused this was fixed — label sets are now shared behind an <code class="inline">Arc</code> in the evaluator and block index, and the write-ahead log removes the pre-flush buffering cliff. The constants predate both, so treat <code class="inline">KiB_PER_POINT</code> as an upper bound.</p>
+
+      <h3>Sizing formula</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>peak_buffer = R × D                      points
+buffer_mem = peak_buffer × 6.3 KiB
+rss_peak   = 1.15 GiB + buffer_mem + 0.15 GiB
+memory_limit ≥ 1.5 × rss_peak            OOM safety factor</code></pre></div>
+      <table>
+        <thead><tr><th>Ingest rate</th><th>Block duration</th><th>Peak buffer</th><th>rss_peak (est.)</th><th>Recommended limit</th></tr></thead>
+        <tbody>
+          <tr><td>0.5 k pts/s</td><td>120 s</td><td>60 k</td><td>1.7 GiB</td><td><strong>2.5 GiB</strong></td></tr>
+          <tr><td>1 k pts/s</td><td>120 s</td><td>120 k</td><td>2.0 GiB</td><td><strong>3 GiB</strong></td></tr>
+          <tr><td>2 k pts/s</td><td>120 s</td><td>240 k</td><td>2.8 GiB</td><td><strong>4.5 GiB</strong></td></tr>
+          <tr><td>1 k pts/s</td><td>300 s</td><td>300 k</td><td>3.3 GiB</td><td><strong>5 GiB</strong></td></tr>
+          <tr><td>5 k pts/s</td><td>60 s</td><td>300 k</td><td>3.3 GiB</td><td><strong>5 GiB</strong></td></tr>
+        </tbody>
+      </table>
+      <p><strong>Rule of thumb:</strong> every extra <strong>1 k pts/s</strong> of ingest costs about <strong>6.3 MiB of RAM per second of block duration</strong>. Adding 60 s to the block duration at 1 k pts/s costs ~380 MiB. Logs are roughly 10× cheaper per record (strings arrive pre-owned, one record = one row); traces are about 2× a metric point.</p>
+
+      <h3>Required allocator settings</h3>
+      <p>Ship these in every non-dev deployment (validated on staging):</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>extraEnv:
+  - name: MALLOC_ARENA_MAX
+    value: "2"
+  - name: MALLOC_TRIM_THRESHOLD_
+    value: "134217728"   # 128 MiB</code></pre></div>
+      <p class="muted">Effect measured: RSS floor 2309 → 1174 MiB, and RSS returns after each flush instead of pinning at the high-water mark. Without the trim threshold, glibc holds freed arena memory indefinitely and the buffer ratio above becomes a <em>ratchet</em> rather than a sawtooth — the single largest source of "Parqtel ate 2.5 GiB and never gave it back" reports. The Helm chart sets <code class="inline">parqtel.mallocArenaMax: 2</code> by default. A musl or jemalloc/mimalloc build changes the constants; re-measure if the base image changes.</p>
+
+      <h3>OOM-avoidance rules</h3>
+      <ol>
+        <li><strong>Size from the formula, verify with the SLIs.</strong> After deploy, watch <code class="inline">parqtel_process_rss_bytes</code> across at least three flush cycles; the flush peak must stay ≤ 65 % of the limit.</li>
+        <li><strong>Never raise the block duration to fix query latency.</strong> The 5-minute instant-query lookback reads the buffer anyway; the block duration only controls flush granularity.</li>
+        <li><strong>Alert before the OOM kill:</strong> <code class="inline">parqtel_process_rss_bytes / on() kube_pod_container_resource_limits{resource="memory"} &gt; 0.65</code></li>
+        <li><strong>Buffer occupancy is the leading indicator.</strong> <code class="inline">parqtel_buffer_points</code> rising monotonically across a flush means the flush is failing (disk full? PVC stuck?) and an OOM is minutes away.</li>
+        <li><strong>CPU follows memory.</strong> A pod near its CPU limit with heavy encode work is about to stall flushes; keep the CPU request ≥ 0.5 core per 1 k pts/s.</li>
+      </ol>
+
+      <h2 id="profiling">Profiling playbook</h2>
+      <p>Profiling is gated by <code class="inline">telemetry.profiling_enabled</code> (default <strong>false</strong>; the endpoints 404 while disabled) and serialized by a process-wide lock — a second capture while one runs returns <code class="inline">429</code>. Restrict the endpoints with a NetworkPolicy.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>kubectl -n monitoring port-forward deploy/parqtel 19092:9090 &amp;
+
+# Memory decomposition (live buffer vs RSS vs high-water mark)
+curl -s localhost:19092/debug/pprof/memory | jq
+
+# CPU hot spots — top frames over a window
+curl -s 'localhost:19092/debug/pprof/summary?seconds=15&amp;top=10' | jq
+
+# Full protobuf profile for `go tool pprof` (flamegraph in the browser)
+go tool pprof -http=:0 'http://localhost:19092/debug/pprof/profile?seconds=30'</code></pre></div>
+
+      <div class="callout info"><div class="c-ic">↗</div><div><p>Full troubleshooting runbook: <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md"><code class="inline">docs/TROUBLESHOOTING.md</code></a> in the repository.</p></div></div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
+    </div>
+  </footer>
+  <script src="../assets/js/site.js"></script>
+</body>
+</html>

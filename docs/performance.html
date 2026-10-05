@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Performance · Parqtel Docs</title>
+  <meta name="description" content="Measured Parqtel performance: query pruning, column projection, prepared log search, Arc-shared label sets, streaming step evaluation, index durability, async flush and the write-ahead log — with the method behind every number.">
+  <link rel="icon" href="../assets/img/logo.svg">
+  <link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel <small>Docs</small></a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="architecture.html">Architecture</a>
+        <a href="getting-started.html">Get Started</a>
+        <a href="deployment.html">Deploy</a>
+        <a href="mcp.html">MCP</a>
+        <a href="api.html">API</a>
+        <a href="screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="sidebar">
+      <div class="group-label">Learn</div>
+      <a href="architecture.html">Architecture</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
+      <a href="deployment.html">Deployment</a>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API explorer</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>Performance</h1>
+      <p class="lead">Every number below was measured against a running build, and says how. Where a proposed optimisation was measured and <strong>failed</strong>, that is recorded too rather than quietly dropped.</p>
+
+      <div class="callout info"><div class="c-ic">↗</div><div><p>Method and raw results: <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md"><code class="inline">docs/benchmarks/PERFORMANCE.md</code></a>. Harnesses: <code class="inline">parqtel-core/examples/bench_bloom.rs</code> (pruning), <code class="inline">parqtel-server/examples/perf_bench.rs</code> (end-to-end), <code class="inline">parqtel-query/examples/bench_label_values.rs</code> (autocomplete). Reproduce with <code class="inline">cargo run --release --example &lt;name&gt;</code>.</p></div></div>
+
+      <h2 id="sustained">Sustained load</h2>
+      <p>15 minutes at 1 000 samples/second, release build:</p>
+      <div class="stats" style="margin:16px 0">
+        <div class="stat"><div class="num">4.4 ms</div><div class="lbl">Ingest p50</div></div>
+        <div class="stat"><div class="num">63 ms</div><div class="lbl">Ingest p99</div></div>
+        <div class="stat"><div class="num">12.7 ms</div><div class="lbl">Query p50 (instant)</div></div>
+        <div class="stat"><div class="num">160 ms</div><div class="lbl">Query p99 (range)</div></div>
+      </div>
+      <p>875 100 samples ingested, <strong>0 errors</strong>, ~1.7 ms to query freshly ingested data straight out of the in-memory buffer.</p>
+
+      <h2 id="pruning">Block pruning</h2>
+      <p>Rows are written grouped by metric name, so a row group's <code class="inline">metric_name</code> and <code class="inline">service_name</code> statistics are <em>exact</em>. The reader uses them to skip whole row groups before decoding anything. Benchmark: 200 metrics × 500 points in one block (100 000 rows), querying one metric of 200.</p>
+
+      <h3>Statistics versus bloom filters</h3>
+      <p>The decisive measurement — a three-way comparison on the same block shape:</p>
+      <table>
+        <thead><tr><th>Configuration</th><th>Block size</th><th>Write</th><th>Query</th></tr></thead>
+        <tbody>
+          <tr><td>Neither (blocks written before the change)</td><td>1.29 MB</td><td>38 ms</td><td>30.33 ms</td></tr>
+          <tr><td><strong>Row-group statistics only</strong></td><td>1.47 MB</td><td>55 ms</td><td><strong>2.34 ms</strong></td></tr>
+          <tr><td>Statistics + bloom filter</td><td>1.49 MB</td><td>42 ms</td><td>2.49 ms</td></tr>
+        </tbody>
+      </table>
+      <p><strong>12.1× faster queries for 14 % more bytes, from statistics alone.</strong> Adding a bloom filter on top moves the query by nothing measurable (2.34 → 2.49 ms is noise) and costs a further ~2 % size — so bloom filters are kept only as a <em>fallback</em> for blocks whose statistics are absent or truncated.</p>
+      <p>A query for a metric that is <em>not</em> in the block costs <strong>0.02 ms instead of 30 ms</strong>: nothing is decoded at all, because the candidate set is empty before a reader is even built.</p>
+
+      <h3>Service-level pruning</h3>
+      <p>Multi-tenant shape — one metric, eight services, one row group each, querying <code class="inline">service.name="svc-3"</code>:</p>
+      <table>
+        <thead><tr><th></th><th>Time</th><th>Rows decoded</th></tr></thead>
+        <tbody>
+          <tr><td>Without the service predicate</td><td>2.05 ms</td><td>4 000 (whole block)</td></tr>
+          <tr><td><strong>With service pruning</strong></td><td><strong>0.43 ms</strong></td><td><strong>500</strong></td></tr>
+        </tbody>
+      </table>
+      <p><strong>4.8×</strong>, entirely the service dimension — metric-only pruning cannot help there, because all eight row groups hold the same metric.</p>
+
+      <h3>Column projection</h3>
+      <p>The metrics scan reads 7 of 15 columns:</p>
+      <table>
+        <thead><tr><th>Query shape</th><th>No projection</th><th>Projected</th><th>Change</th></tr></thead>
+        <tbody>
+          <tr><td>Single metric of 200 (1 row group)</td><td>2.47 ms</td><td>2.33 ms</td><td>−6 %</td></tr>
+          <tr><td>One service of 8 (1 row group)</td><td>0.40 ms</td><td>0.34 ms</td><td>−15 %</td></tr>
+          <tr><td><strong>Full-block scan, 100 000 rows</strong></td><td><strong>53.10 ms</strong></td><td><strong>38.13 ms</strong></td><td><strong>−28 %</strong></td></tr>
+        </tbody>
+      </table>
+      <div class="callout"><div class="c-ic">ℹ</div><div><p>The original target was "≥ 30 % for all three signals". It is <strong>not met, and the target is now wrong</strong>: it was written before row-group pruning landed, so a typical query decodes a <em>single</em> row group and the skipped columns were never where the time went. Projection pays in proportion to how many row groups a query must read. Log and trace scans are not projected at all.</p></div></div>
+
+      <h3>Time-range pruning</h3>
+      <p>The earlier series — multi-row-group blocks (~25 K rows) plus timestamp statistics:</p>
+      <table>
+        <thead><tr><th>Benchmark</th><th>Before</th><th>After</th><th>Δ</th></tr></thead>
+        <tbody>
+          <tr><td>Ingest (decode + buffer push)</td><td>~570 K pts/s</td><td>~550 K pts/s</td><td>≈ flat (±3 % noise)</td></tr>
+          <tr><td>Flush (50 K pts → Parquet)</td><td>~840 K pts/s</td><td>~830 K pts/s</td><td>≈ flat (compression-bound)</td></tr>
+          <tr><td><strong>Scan (full range, 600 K pts)</strong></td><td>~4.58 M pts/s</td><td><strong>~6.40 M pts/s</strong></td><td><strong>+39 %</strong></td></tr>
+          <tr><td>Query (full range, executor)</td><td>~1.99 M pts/s</td><td>~1.95 M pts/s</td><td>≈ flat</td></tr>
+          <tr><td>Narrow scan (pruned to 25 K pts)</td><td>n/a</td><td>15–16 ms/op</td><td>new capability</td></tr>
+          <tr><td>Narrow query (pruned)</td><td>n/a</td><td>~26 ms/op</td><td>11.9 M pts/s effective</td></tr>
+        </tbody>
+      </table>
+      <p>The full-range <em>query</em> is unchanged because executor-side grouping and downsampling dominate once scanning is fast. The blocking-pool change below is <strong>at parity by design</strong>: the old code held the ingest mutex across the whole batch including synchronous Parquet writes — poor latency, but not throughput, since the work was serialised anyway. The win is <em>isolation</em>: no async worker is ever parked on disk I/O, which prevents p99 spikes rather than raising the mean.</p>
+
+      <h2 id="query">Query evaluation</h2>
+      <table>
+        <thead><tr><th>Change</th><th>Workload</th><th>Before</th><th>After</th><th>Δ</th></tr></thead>
+        <tbody>
+          <tr><td>Prepared log/trace queries</td><td>20 000 rows</td><td>1.000 s</td><td><strong>4.881 ms</strong></td><td><strong>205×</strong></td></tr>
+          <tr><td>Query CPU off the runtime</td><td>4 concurrent queries</td><td>11.48 s</td><td><strong>3.26 s</strong></td><td><strong>3.50×</strong></td></tr>
+          <tr><td><code class="inline">Arc</code>-shared labels + hashed group keys</td><td>300 series × 400 points × 20 000 steps</td><td>3.01 s</td><td><strong>0.438 s</strong></td><td><strong>6.9×</strong></td></tr>
+          <tr><td>Streaming step evaluation</td><td>wide panel</td><td>168.0 MB resident</td><td><strong>109.9 MB</strong></td><td>−35 % peak</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li><strong>Prepared queries (205×).</strong> Log and trace search evaluated the <em>query</em> once per row — a regex compile per <code class="inline">=~</code> clause per row, a lowercase of the whole body per search term per row. Compiling costs ~1–10 µs against ~10 ns for the match, so setup dominated by three orders of magnitude. A prepared query moves all of it to a one-time <code class="inline">new()</code>, with an allocation-free ASCII-case-folded substring scan.</li>
+        <li><strong>Blocking pool (3.5×).</strong> Evaluation runs on <code class="inline">spawn_blocking</code>, so a wide range query cannot starve an async worker. Single-query latency is unchanged (2.92 s → 2.87 s) — the gain is concurrency.</li>
+        <li><strong>Shared labels (6.9×).</strong> Label sets are shared behind an <code class="inline">Arc</code> instead of being cloned per series per <em>step</em> — at 1 000 series × 1 000 steps that was ~20 M string allocations producing identical answers 1 000 times over. Aggregation groups are keyed by fingerprint, with the group's label set built once per distinct group.</li>
+        <li><strong>Streaming steps (−35 %).</strong> Each step is folded into the response as it is produced rather than every step being retained, so peak memory is one step's vector. Measured on a 56.6 MB result.</li>
+      </ul>
+
+      <h2 id="autocomplete">Label-value autocomplete</h2>
+      <p>The query builder must never enumerate a high-cardinality label. Worst case: 100 000 distinct <code class="inline">user_id</code> values across 300 K buffered points.</p>
+      <table>
+        <thead><tr><th>Path</th><th>Latency (best of 20)</th><th>Payload per keystroke</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Bounded top-10, no prefix</strong> — buffer walk, newest-first, stop at 10</td><td><strong>~1.2 µs</strong></td><td>10 values</td></tr>
+          <tr><td><strong>Bounded top-10, prefix <code class="inline">user-099</code></strong> — server-side <code class="inline">starts_with</code></td><td><strong>~1.2 µs</strong></td><td>10 values</td></tr>
+          <tr><td>Full enumeration (unbounded dropdown)</td><td>~15.6 ms</td><td>100 000 values</td></tr>
+        </tbody>
+      </table>
+      <p><strong>~13 000× faster and 10 000× less data</strong> per keystroke. The flush-time per-field index is capped at 10 K values, so even cold (buffer-drained) lookups are bounded; the API clamps <code class="inline">limit</code> to 100.</p>
+
+      <h2 id="durability">Durability and flush</h2>
+      <table>
+        <thead><tr><th>Change</th><th>Measurement</th></tr></thead>
+        <tbody>
+          <tr><td>WAL append cost under the shard lock</td><td>metrics: 9 555 acquisitions, 0.51 ms total, <strong>53 ns mean</strong> — logs 126 ns, traces 1.2 µs</td></tr>
+          <tr><td>Async flush worker</td><td>single flush-triggering request ~330 ms → <strong>~280 ms</strong>; 4 concurrent 1.291 s → <strong>0.932 s</strong></td></tr>
+          <tr><td>Index durability handshake</td><td>before: after restart <code class="inline">blocks=0 rows=0</code>, <code class="inline">index.json absent</code>; after: <code class="inline">blocks=3 rows=60000</code>, <code class="inline">index.json present</code></td></tr>
+          <tr><td>Self-healing index</td><td>sidecar rebuilt in <strong>1 164 bytes</strong> for 4 blocks / 64 000 rows</td></tr>
+        </tbody>
+      </table>
+      <p>See <a href="durability.html">Durability &amp; recovery</a> for what these numbers mean.</p>
+
+      <h2 id="index-size">Block index size</h2>
+      <p>Measured rather than assumed, on the load-generator stack after ~10 minutes:</p>
+      <table>
+        <thead><tr><th></th><th>Value</th><th>Per block</th></tr></thead>
+        <tbody>
+          <tr><td>Blocks</td><td>1 226</td><td>—</td></tr>
+          <tr><td>Data</td><td>35.6 MB</td><td>29 064 B</td></tr>
+          <tr><td><code class="inline">index.json</code></td><td><strong>8.20 MB</strong></td><td><strong>6 688 B</strong></td></tr>
+          <tr><td>Ratio</td><td colspan="2"><strong>The sidecar is 23 % of the data it describes</strong>, growing linearly at ~0.3 GB/day and <strong>not bounded by retention</strong></td></tr>
+        </tbody>
+      </table>
+      <p><code class="inline">metric_names</code> is 55 % of the sidecar, because the same name is stored once per block. A per-block bloom filter over names would cut ~13 % of total storage — sound, but a sidecar format change needing a read-old/write-new story, so it is deliberately not built. Full breakdown in <a href="storage.html#index">storage</a>.</p>
+
+      <h2 id="rejected">Measured and rejected</h2>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>A series dictionary for the <code class="inline">labels</code> column was measured at <strong>0.0 % benefit</strong>: 810 614 B versus 810 678 B. The premise was false — Parquet dictionary-encodes string columns by default, so the dictionary the proposal would add already exists. It was dropped rather than shipped as a no-op.</p></div></div>
+
+      <h2 id="reproduce">Reproducing</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code># End-to-end ingest / flush / scan / query
+cargo run --release -p parqtel-server --example perf_bench
+
+# Row-group pruning (statistics vs bloom vs neither)
+cargo run --release -p parqtel-core  --example bench_bloom
+
+# Label-value autocomplete
+cargo run --release -p parqtel-query --example bench_label_values
+
+# Live index footprint
+curl -s localhost:9090/metrics | grep -E 'parqtel_index_sidecar_bytes|parqtel_storage_(blocks|bytes)'</code></pre></div>
+      <p class="muted">All figures are from a single machine in release builds. Re-measure on your own hardware, storage and cardinality before quoting them in a capacity plan — the <em>ratios</em> travel better than the absolute numbers.</p>
+
+      <div class="callout"><div class="c-ic">↗</div><div><p>Related: <a href="operations.html#sizing">Memory sizing</a> · <a href="operations.html#profiling">Profiling playbook</a> · <a href="storage.html">Storage engine</a></p></div></div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
+    </div>
+  </footer>
+  <script src="../assets/js/site.js"></script>
+</body>
+</html>

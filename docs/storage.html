@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storage Engine · Parqtel Docs</title>
+  <meta name="description" content="Parqtel's block-based Parquet storage: on-disk layout and schemas, the five-level pruning chain (index, time, metric_name, service_name, projection), column projection, compaction, retention and the measured block-index footprint.">
+  <link rel="icon" href="../assets/img/logo.svg">
+  <link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel <small>Docs</small></a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="architecture.html">Architecture</a>
+        <a href="getting-started.html">Get Started</a>
+        <a href="deployment.html">Deploy</a>
+        <a href="mcp.html">MCP</a>
+        <a href="api.html">API</a>
+        <a href="screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0.21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="sidebar">
+      <div class="group-label">Learn</div>
+      <a href="architecture.html">Architecture</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
+      <a href="deployment.html">Deployment</a>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API explorer</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>Storage Engine</h1>
+      <p class="lead">Parqtel stores data in self-contained, immutable Parquet block files. Blocks are never modified in place, so a query is a set of prune decisions followed by a parallel read — and a backup is a file copy.</p>
+
+      <div class="callout info"><div class="c-ic">↗</div><div><p>Implementation: <a href="https://github.com/parqtel/parqtel-oss/tree/main/parqtel-core/src/storage"><code class="inline">parqtel-core/src/storage/</code></a> — <code class="inline">scanner.rs</code>, <code class="inline">index.rs</code>, <code class="inline">compactor.rs</code>, <code class="inline">retention.rs</code>, <code class="inline">persist.rs</code>. Schemas are canonical in <code class="inline">models/storage/schema.rs</code>.</p></div></div>
+
+      <h2 id="layout">On-disk layout</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>data/                          storage.data_dir  (default "data")
+├── 1728000000000000000_1728007200000000000.a1b2….parquet   metric block
+├── traces_1728000000000000000_1728007200000000000.c3d4….parquet
+├── index.json                  metrics sidecar
+├── traces/
+│   └── index.json              traces sidecar  (no .parquet live here)
+└── wal/
+    ├── metrics/  00000000000000000000.wal …  commit
+    └── traces/   00000000000000000000.wal …  commit
+
+data/logs/                     logs.data_dir  (default "data/logs")
+├── logs_1728000000000000000_1728001800000000000.e5f6….parquet
+├── index.json                  logs sidecar
+└── wal/logs/    00000000000000000000.wal …  commit</code></pre></div>
+
+      <h3>Block naming</h3>
+      <table>
+        <thead><tr><th>Signal</th><th>Pattern</th></tr></thead>
+        <tbody>
+          <tr><td>Metrics</td><td><code class="inline">{start_ns}_{end_ns}_{uuid}.parquet</code></td></tr>
+          <tr><td>Logs</td><td><code class="inline">logs_{start_ns}_{end_ns}_{uuid}.parquet</code></td></tr>
+          <tr><td>Traces</td><td><code class="inline">traces_{start_ns}_{end_ns}_{uuid}.parquet</code></td></tr>
+        </tbody>
+      </table>
+      <p>Timestamps are nanoseconds since the epoch; <code class="inline">uuid</code> is 32 lowercase hex characters. Every writer writes to <code class="inline">.tmp_{filename}</code> then <code class="inline">fs::rename</code>s into place, so a block becomes visible atomically. Sidecars use <code class="inline">index.tmp</code> → rename.</p>
+
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>Trace blocks live in the metrics directory.</strong> <code class="inline">TraceWriter</code> is built from <code class="inline">storage.*</code>, so trace <code class="inline">.parquet</code> files sit alongside metric blocks; only the trace <em>index</em> is one level down in <code class="inline">data/traces/</code>. Backing up <code class="inline">data/</code> therefore captures both metric and trace blocks.</p></div></div>
+
+      <h2 id="blocks">Block parameters</h2>
+      <table>
+        <thead><tr><th>Signal</th><th>Block duration</th><th>Max rows</th><th>Row group</th><th>Retention</th><th>Compression</th></tr></thead>
+        <tbody>
+          <tr><td>Metrics</td><td>2 h <span class="muted">(7200 s)</span></td><td>1 000 000</td><td>100 000</td><td>7 days</td><td>zstd</td></tr>
+          <tr><td>Logs</td><td>30 min <span class="muted">(1800 s)</span></td><td>200 000</td><td>20 000</td><td>3 days</td><td>zstd</td></tr>
+          <tr><td>Traces</td><td>2 h <span class="muted">(reuses <code class="inline">storage.*</code>)</span></td><td>1 000 000</td><td>100 000</td><td>7 days</td><td>zstd</td></tr>
+        </tbody>
+      </table>
+      <div class="callout"><div class="c-ic">↗</div><div><p>Config validation rejects <code class="inline">row_group_size</code> of 0, or above <code class="inline">max_rows_per_block</code>. Either combination silently disables row-group pruning — a performance regression, not a correctness one, which is exactly why it is treated as an error.</p></div></div>
+
+      <h2 id="schemas">Parquet schemas</h2>
+      <p>Defined canonically in <code class="inline">parqtel-core/src/models/storage/schema.rs</code>, written with the <code class="inline">arrow</code>/<code class="inline">parquet</code> 59 stack at <code class="inline">WriterVersion::PARQUET_2_0</code>. All three schemas are <strong>flat</strong> (no nested groups), which is what lets the scanner project by leaf index safely.</p>
+
+      <h3>Metrics — 15 columns</h3>
+      <table>
+        <thead><tr><th>Column</th><th>Type</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">timestamp_ns</code></td><td>Timestamp(ns)</td><td>Time prune column</td></tr>
+          <tr><td><code class="inline">metric_name</code></td><td>Dictionary(Int32, Utf8)</td><td><strong>Prune column + bloom filter</strong></td></tr>
+          <tr><td><code class="inline">metric_kind</code></td><td>Utf8</td><td>—</td></tr>
+          <tr><td><code class="inline">service_name</code></td><td>Dictionary</td><td><strong>Prune column + bloom filter</strong>; merged back as the <code class="inline">service.name</code> label on read</td></tr>
+          <tr><td><code class="inline">service_version</code></td><td>Dictionary</td><td>Correlation</td></tr>
+          <tr><td><code class="inline">k8s_namespace</code>, <code class="inline">k8s_pod_name</code>, <code class="inline">k8s_pod_uid</code>, <code class="inline">k8s_container_name</code>, <code class="inline">k8s_node_name</code></td><td>Dictionary</td><td>Correlation (nullable)</td></tr>
+          <tr><td><code class="inline">resource_attributes</code></td><td>Dictionary (JSON)</td><td>Everything else from the resource</td></tr>
+          <tr><td><code class="inline">labels</code></td><td>Utf8 (JSON)</td><td>Point labels</td></tr>
+          <tr><td><code class="inline">value_float</code>, <code class="inline">value_int</code>, <code class="inline">value_complex</code></td><td>Float64 / Int64 / Utf8 (JSON)</td><td>Values; <code class="inline">value_complex</code> carries histograms and summaries</td></tr>
+        </tbody>
+      </table>
+      <p>At write time <code class="inline">extract_correlation_labels</code> lifts <code class="inline">service.name</code>, <code class="inline">service.version</code> and the <code class="inline">k8s.*</code> keys out of resource attributes into their own dictionary columns — fast equality filtering. Only the <strong>dotted</strong> OTLP keys are recognised; <code class="inline">service_name</code> is not an alias.</p>
+
+      <h3>Logs — 19 columns</h3>
+      <p><code class="inline">timestamp_ns</code>, <code class="inline">observed_timestamp_ns</code>, <code class="inline">severity_number</code> (Int32), <code class="inline">severity_text</code>, <code class="inline">body</code>, the seven correlation columns, <code class="inline">trace_id</code> (16 bytes), <code class="inline">span_id</code> (8 bytes), <code class="inline">flags</code>, <code class="inline">scope_name</code>, <code class="inline">scope_version</code>, <code class="inline">attributes</code> (JSON) and <code class="inline">resource_attributes</code> (JSON).</p>
+
+      <h3>Traces — 24 columns</h3>
+      <p><code class="inline">timestamp_ns</code>, <code class="inline">span_id</code>, <code class="inline">span_name</code>, <code class="inline">span_kind</code>, <code class="inline">start_time_ns</code>, <code class="inline">end_time_ns</code>, <code class="inline">duration_ns</code>, <code class="inline">status_code</code>, <code class="inline">status_message</code>, the seven correlation columns, <code class="inline">trace_id</code>, <code class="inline">parent_span_id</code>, <code class="inline">flags</code>, <code class="inline">trace_state</code>, <code class="inline">attributes</code>, <code class="inline">resource_attributes</code>, <code class="inline">events</code> and <code class="inline">links</code>.</p>
+      <p class="muted">Signal detection during reconciliation reads the <strong>schema</strong>, not the filename: <code class="inline">severity_text</code> → Logs, then <code class="inline">metric_kind</code> → Metrics, then <code class="inline">start_time_ns</code> → Traces. The order matters because log blocks also carry a <code class="inline">span_id</code> column.</p>
+
+      <h3>Writer properties</h3>
+      <p>The production ingest writer sets, per column rather than globally, so the largest column does not pay for a filter nothing reads:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>WriterVersion::PARQUET_2_0
+codec                        from compression + compression_level (zstd 1–22)
+max_row_group_row_count      storage.row_group_size
+column_bloom_filter_enabled  metric_name, service_name
+bloom_filter_fpp             0.01
+statistics_enabled           EnabledStatistics::Page
+column_index_truncate_length 64
+data_page_size_limit         512 KiB</code></pre></div>
+      <div class="callout"><div class="c-ic">↗</div><div><p>Per-column encoding is <strong>not</strong> configured — Parquet dictionary-encodes string columns by default. A proposed Arrow-level series dictionary for the <code class="inline">labels</code> column was measured at <strong>0 % benefit</strong> (810 614 B vs 810 678 B) and dropped: the premise was false, because the encoding it would add already exists.</p></div></div>
+
+      <h2 id="pruning">The pruning chain</h2>
+      <p>Every metrics query walks five levels, cheapest first. Each level can only skip work it can prove is unnecessary.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>query
+  │
+  ├─ ① BlockIndex::query          in-memory Vec, binary search      no I/O
+  │     time window + metric-name set membership
+  │
+  ├─ ② row_groups_in_range        Statistics::Int64 on timestamp_ns
+  │     min/max overlap, null-count guard
+  │
+  ├─ ③ row_groups_matching_value  Statistics::ByteArray on metric_name
+  │     min/max first (exact, free) → bloom filter only as fallback
+  │
+  ├─ ④ row_groups_matching_value  same two-tier test on service_name
+  │     only when the query has a service.name *equality* matcher
+  │
+  ├─ ⑤ ProjectionMask::leaves     7 of 15 metrics columns
+  │
+  └─ spawn_blocking × 16          ≤ 128 blocks; row filters before allocation</code></pre></div>
+      <div class="callout info"><div class="c-ic">↗</div><div><p><strong>The chain fails open.</strong> Missing statistics, a missing bloom filter, an absent column or an unevaluable condition all <em>keep</em> the row group. A false positive costs one extra block read; a false negative would be data loss. The worst case is always the behaviour that existed before any of this.</p></div></div>
+
+      <h3>Why statistics beat bloom</h3>
+      <p>Rows are written grouped by <code class="inline">(metric_name, metric_kind, resource_attributes)</code>, so a row group's <code class="inline">metric_name</code> and <code class="inline">service_name</code> min and max are usually the <em>same value</em>. Testing the needle against that range is <strong>exact and free</strong> — no filter read, no probabilistic answer. Bloom filters are consulted only when statistics cannot decide (column missing, no min/max, unexpected physical type), where a false positive is possible.</p>
+      <p>One nuance: the name test is <strong>one-sided</strong>. min/max cover non-null values only, so unlike the time prune it needs no null-count guard — a null row cannot contain the value being searched for.</p>
+
+      <h3>Per-signal coverage</h3>
+      <table>
+        <thead><tr><th></th><th>① Index</th><th>② Time</th><th>③ Metric</th><th>④ Service</th><th>⑤ Projection</th><th>Block cap</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Metrics</strong></td><td>✅</td><td>✅ <code class="inline">timestamp_ns</code></td><td>✅</td><td>✅ (opt-in)</td><td>✅ 7 of 15</td><td>128</td></tr>
+          <tr><td><strong>Logs</strong></td><td>✅ (time only)</td><td>✅ <code class="inline">timestamp_ns</code></td><td>—</td><td>—</td><td>— all 19</td><td>128</td></tr>
+          <tr><td><strong>Traces</strong></td><td>✅ (time only)</td><td>✅ <code class="inline">start_time_ns</code></td><td>—</td><td>—</td><td>— all 24</td><td><strong>none</strong></td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Page-level and column-index pruning <em>inside</em> a row group is written and loaded but not yet consumed — wired, not read.</p>
+
+      <h2 id="projection">Column projection</h2>
+      <p>The metrics scan reads <strong>7 of 15</strong> columns. The list is a module constant, not computed per query:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>const METRIC_SCAN_COLUMNS: [&str; 7] = [
+    "timestamp_ns", "metric_name", "service_name", "labels",
+    "value_float", "value_int", "value_complex",
+];</code></pre></div>
+      <p>Skipped: <code class="inline">metric_kind</code>, <code class="inline">service_version</code>, the five <code class="inline">k8s_*</code> dictionaries and <code class="inline">resource_attributes</code>.</p>
+      <ul>
+        <li>The projection is <strong>intersected with the file's own schema</strong> before being applied, so blocks from older builds stay readable.</li>
+        <li>The decoder resolves every column index <strong>by name</strong> from the batch's own schema, because a projection renumbers positions. Hard-coded positions against a projection is exactly how a projection silently starts reading the wrong column — the regression test is adversarial because <code class="inline">labels</code> and <code class="inline">value_complex</code> are both <code class="inline">Utf8</code>, so swapping them type-checks and returns wrong data.</li>
+      </ul>
+      <p class="muted">Logs and traces are <strong>not</strong> projected. Open work: <code class="inline">events</code>, <code class="inline">links</code> and the <code class="inline">k8s_*</code> dictionaries are likewise unused by those decoders. See <a href="operations.html#log-trace-projection">known issues</a>.</p>
+
+      <h2 id="index">Block index</h2>
+      <p><code class="inline">BlockIndex</code> holds a <code class="inline">Vec&lt;BlockMetadata&gt;</code> kept sorted by <code class="inline">start_timestamp_ns</code> after every mutation — <code class="inline">query</code> binary-searches on that invariant. It performs no filesystem I/O of its own; persistence belongs to <code class="inline">BlockIndexStore</code>.</p>
+
+      <h3>Sidecar format</h3>
+      <p><code class="inline">index.json</code>, one per signal, a <strong>bare JSON array</strong> of <code class="inline">BlockMetadata</code> (no envelope, no version field), written tmp+rename:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>[{ "path": "…", "start_timestamp_ns": …, "end_timestamp_ns": …,
+   "row_count": …, "size_bytes": …,
+   "metric_names": {…}, "label_names": {…},
+   "label_values": { "field": ["v1", …] },
+   "signal_type": "Metrics" }, …]</code></pre></div>
+      <p>Writes are batched: mutations set a dirty flag and one <code class="inline">persist_once</code> runs per <code class="inline">server.index_persist_interval_secs</code> (default 2 s). It serialises under a <em>read</em> lock and writes on the blocking pool with <strong>no lock held</strong>; a mutation landing mid-pass simply re-sets the flag. Compaction and retention call <code class="inline">mark_dirty()</code> and never write the sidecar themselves.</p>
+
+      <h3>Measured footprint</h3>
+      <p>Measured, not assumed — on the load-generator stack after ~10 minutes:</p>
+      <table>
+        <thead><tr><th></th><th>Size</th><th>Per block</th></tr></thead>
+        <tbody>
+          <tr><td>Blocks</td><td>1 226</td><td>—</td></tr>
+          <tr><td>Data (<code class="inline">storage_bytes</code>)</td><td>35.6 MB</td><td>29 064 B</td></tr>
+          <tr><td><code class="inline">index.json</code></td><td><strong>8.20 MB</strong></td><td><strong>6 688 B</strong></td></tr>
+          <tr><td>Ratio</td><td colspan="2"><strong>The sidecar is 23 % of the data it describes</strong></td></tr>
+        </tbody>
+      </table>
+      <p>Growth is <strong>linear in block count</strong> — roughly 32 blocks/min in that run ⇒ <strong>~0.3 GB of <code class="inline">index.json</code> per day</strong> — and, unlike the data, it is <strong>not bounded by retention</strong>. Where the bytes go (600 series, 4 label fields):</p>
+      <table>
+        <thead><tr><th>Field</th><th>Bytes/block</th><th>Share</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">metric_names</code></td><td>~500</td><td><strong>55 %</strong></td></tr>
+          <tr><td><code class="inline">label_values</code></td><td>~107</td><td>12 %</td></tr>
+          <tr><td><code class="inline">label_names</code></td><td>~57</td><td>6 %</td></tr>
+          <tr><td>rest (path, sizes, timestamps)</td><td>~243</td><td>27 %</td></tr>
+        </tbody>
+      </table>
+      <p><code class="inline">metric_names</code> dominates because the same name is stored once <em>per block</em>. A per-block bloom filter over names (~10 bits/name) would cut ~55 % of a sidecar that is itself 23 % of storage ⇒ <strong>~13 % of total storage</strong>. It is sound (a false positive costs one extra block read, never a missing result) but is a sidecar format change needing a read-old/write-new story, so it is deliberately not built. Watch it live as <code class="inline">parqtel_index_sidecar_bytes{signal=…}</code>.</p>
+
+      <h3>Label-value index</h3>
+      <p>At flush time each block records a per-field distinct-value dictionary (<code class="inline">label_values</code>), capped at <strong>10 000 values per field</strong>. <code class="inline">/api/v1/label/&lt;name&gt;/values</code> reads it from metadata instead of decoding blocks — the executor layers the in-memory buffer over the newest blocks' dictionaries, bounded to the last 5 blocks, and the API clamps <code class="inline">limit</code> to 100. On a 100 000-value <code class="inline">user_id</code> that is <strong>~1.2 µs and 10 values</strong> per keystroke versus ~15.6 ms and 100 000 values for a full enumeration.</p>
+      <p>Compaction unions the source dictionaries under the same cap into the merged block. Before that fix, every compaction pass replaced <em>N</em> dictionaries with one <strong>empty</strong> one, degrading autocomplete on every pass until the source blocks aged out.</p>
+
+      <h3>Reconciliation</h3>
+      <p>At startup the index is reconciled against the data directory in both directions — see <a href="durability.html#index-rebuild">durability &amp; recovery</a> for the full procedure and its caveat.</p>
+
+      <h2 id="compaction">Compaction</h2>
+      <p>Runs every <code class="inline">compaction_interval_secs</code> (default 3600 s, floored at 60 s) in two passes.</p>
+
+      <h3>Pass A — small-block merge</h3>
+      <ul>
+        <li><strong>Trigger:</strong> ≥ 2 blocks with <code class="inline">row_count &lt; 10 000</code>.</li>
+        <li><strong>Selection:</strong> in index order, truncated to <code class="inline">compaction_max_merge_blocks</code> (default 12, floored at 2).</li>
+        <li><strong>Execution:</strong> <code class="inline">spawn_blocking</code> with <strong>no lock held</strong> — decode, union dictionaries, write merged.</li>
+        <li><strong>Publication:</strong> one <code class="inline">replace()</code> under a write lock plus <code class="inline">mark_dirty()</code> — no I/O, sidecar deferred.</li>
+        <li><strong>Deletion last:</strong> sources are removed only after the merge is published, so a crash in between leaves redundant blocks (harmless) rather than a dangling index entry (a query error).</li>
+      </ul>
+
+      <h3>Pass B — tiered warm/cold</h3>
+      <ul>
+        <li>Candidates: same signal, older than <strong>6 h</strong>, and under 500 000 rows (do not re-merge already-large blocks).</li>
+        <li>Tier window: <strong>24 h</strong> if any candidate is older than 24 h, else 6 h.</li>
+        <li>Greedy adjacent grouping from an anchor; singleton groups skipped; groups truncated to <code class="inline">compaction_max_merge_blocks</code>.</li>
+        <li>Budget: <code class="inline">compaction_max_merges_per_pass</code> (default 8) across the <strong>whole cycle</strong>. One merge per signal per hour cannot keep up with a cluster whose small blocks arrive faster than that.</li>
+      </ul>
+
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>Traces are not compacted by the shipped server.</strong> The compactor now handles trace blocks — the code path is implemented and unit-tested (3 small trace blocks merge to 1, all spans survive, the merged block still decodes) — but <code class="inline">main.rs</code> only starts maintenance for <strong>metrics and logs</strong>. Traces get retention and index persistence, not compaction. If you rely on trace compaction today, metrics and logs are the affected ones, and trace blocks will continue to accumulate until retention deletes them.</p></div></div>
+
+      <h2 id="retention">Retention</h2>
+      <p>Runs every <code class="inline">server.retention_interval_secs</code> (default 3600 s), shared across all three signals:</p>
+      <ol>
+        <li><code class="inline">cutoff = now − retention_days</code></li>
+        <li>Select expired blocks under a <strong>read</strong> lock — taking the write lock would block every query handler for the whole deletion batch</li>
+        <li>Empty ⇒ return immediately <em>without creating the sidecar</em> — a read-only deployment leaves no stray file and pays no write</li>
+        <li>Unlink each path on the blocking pool; <code class="inline">NotFound</code> ignored, anything else logged and counted</li>
+        <li>Drop the index entries and mark dirty</li>
+      </ol>
+      <div class="callout"><div class="c-ic">↗</div><div><p>An index entry is dropped only for a file that was actually expired <em>and</em> removed. Orphaning a live file would hide its data from queries forever, with nothing on disk left to rebuild from.</p></div></div>
+
+      <h2 id="config">Configuration</h2>
+      <p>Storage configuration is flat — there is no <code class="inline">blocks.metrics.*</code> nesting. Traces reuse <code class="inline">[storage]</code> entirely.</p>
+      <table>
+        <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Semantics</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">storage.backend</code></td><td>String</td><td><code class="inline">"parquet"</code></td><td>Only <code class="inline">"parquet"</code> is registered.</td></tr>
+          <tr><td><code class="inline">storage.data_dir</code></td><td>Path</td><td><code class="inline">"data"</code></td><td>Metric <em>and trace</em> blocks, metrics sidecar, and both WALs.</td></tr>
+          <tr><td><code class="inline">storage.block_duration_secs</code></td><td>Integer</td><td><code class="inline">7200</code></td><td>Metrics/trace block duration.</td></tr>
+          <tr><td><code class="inline">storage.max_rows_per_block</code></td><td>Integer</td><td><code class="inline">1000000</code></td><td>Row cap; also the pre-check that flushes <em>before</em> a batch would exceed it.</td></tr>
+          <tr><td><code class="inline">storage.compression</code></td><td>String</td><td><code class="inline">"zstd"</code></td><td><code class="inline">zstd</code> · <code class="inline">snappy</code> · <code class="inline">lz4</code> · <code class="inline">none</code>.</td></tr>
+          <tr><td><code class="inline">storage.compression_level</code></td><td>Integer</td><td>unset</td><td>zstd 1–22. Unset uses the codec default. Rejected (not ignored) for the other codecs.</td></tr>
+          <tr><td><code class="inline">storage.retention_days</code></td><td>Integer</td><td><code class="inline">7</code></td><td>Metrics <em>and traces</em>.</td></tr>
+          <tr><td><code class="inline">storage.compaction_interval_secs</code></td><td>Integer</td><td><code class="inline">3600</code></td><td>Compaction period; floored at 60 s.</td></tr>
+          <tr><td><code class="inline">storage.row_group_size</code></td><td>Integer</td><td><code class="inline">100000</code></td><td>Must be &gt; 0 and ≤ <code class="inline">max_rows_per_block</code>. The knob pruning depends on.</td></tr>
+          <tr><td><code class="inline">storage.compaction_max_merge_blocks</code></td><td>Integer</td><td><code class="inline">12</code></td><td>Max source blocks per merge; floored at 2.</td></tr>
+          <tr><td><code class="inline">storage.compaction_max_merges_per_pass</code></td><td>Integer</td><td><code class="inline">8</code></td><td>Max merges per cycle across all signals; floored at 1.</td></tr>
+        </tbody>
+      </table>
+      <p><code class="inline">[logs]</code> has the same shape minus <code class="inline">backend</code>, with defaults <code class="inline">data_dir="data/logs"</code>, <code class="inline">block_duration_secs=1800</code>, <code class="inline">max_rows_per_block=200000</code>, <code class="inline">row_group_size=20000</code>, <code class="inline">retention_days=3</code>. Its validation delegates to the same shared rule set, so the two blocks cannot drift apart.</p>
+
+      <h3>Compile-time constants, not configuration</h3>
+      <p class="muted"><code class="inline">MAX_BLOCKS = 128</code> · <code class="inline">MAX_CONCURRENT = 16</code> · <code class="inline">LABEL_CACHE_MAX = 10 000</code> · <code class="inline">BLOOM_FPP = 0.01</code> · <code class="inline">COLUMN_INDEX_TRUNCATE_LENGTH = 64</code> · <code class="inline">DATA_PAGE_SIZE_LIMIT = 512 KiB</code> · <code class="inline">MAX_ZSTD_LEVEL = 22</code> · compaction thresholds 10 000 rows and 500 000 rows · tier windows 6 h / 24 h.</p>
+
+      <h2 id="backup">Backup and portability</h2>
+      <ul>
+        <li><strong>Blocks are immutable.</strong> Copy or snapshot the data directory while the server runs.</li>
+        <li><strong>The sidecar is a cache, never the source of truth.</strong> Back it up for fast startup, but a lost or stale <code class="inline">index.json</code> repairs itself at startup via reconciliation.</li>
+        <li><strong>Rolling back is safe.</strong> Blocks are self-describing Parquet and the previous binary reads them. Rolling <em>forward</em> across the arrow2 → arrow 59 migration is not — that encoding change needs a data-directory wipe.</li>
+      </ul>
+
+      <div class="callout"><div class="c-ic">↗</div><div><p>Related: <a href="durability.html">Durability &amp; recovery</a> · <a href="performance.html">Performance</a> · <a href="configuration.html">Configuration reference</a></p></div></div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
+    </div>
+  </footer>
+  <script src="../assets/js/site.js"></script>
+</body>
+</html>

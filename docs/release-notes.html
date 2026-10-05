@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Release Notes · Parqtel Docs</title>
+  <meta name="description" content="Parqtel release history: v0.3.1 chart and release-pipeline fixes, v0.3.0 alert presets, live MCP tools and OTLP self-telemetry, and the v0.2.0 durability and performance work.">
+  <link rel="icon" href="../assets/img/logo.svg">
+  <link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel <small>Docs</small></a>
+      <button class="icon-btn nav-toggle" aria-label="Toggle menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="architecture.html">Architecture</a>
+        <a href="getting-started.html">Get Started</a>
+        <a href="deployment.html">Deploy</a>
+        <a href="mcp.html">MCP</a>
+        <a href="api.html">API</a>
+        <a href="screenshots.html">UI</a>
+      </nav>
+      <a class="icon-btn github-link" href="https://github.com/parqtel/parqtel-oss" aria-label="GitHub" style="margin-left:12px"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Switch theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="sidebar">
+      <div class="group-label">Learn</div>
+      <a href="architecture.html">Architecture</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
+      <a href="deployment.html">Deployment</a>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API explorer</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>Release Notes</h1>
+      <p class="lead">Parqtel follows <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a> and <a href="https://semver.org/">Semantic Versioning</a>. Releases are cut by pushing a <code class="inline">v*</code> tag; the release workflow re-runs the full test suite on the tagged commit before anything reaches a registry or the release page.</p>
+      <p class="muted">Canonical source: <a href="https://github.com/parqtel/parqtel-oss/blob/main/CHANGELOG.md"><code class="inline">CHANGELOG.md</code></a> in the repository.</p>
+
+      <h2 id="v031">v0.3.1 — chart and release pipeline <span class="tag">5 Oct 2026</span></h2>
+      <p>No binary behaviour changes. <em>Chart version <code class="inline">0.3.1</code>, appVersion <code class="inline">0.3.1</code>.</em></p>
+
+      <h3>Fixed</h3>
+      <ul>
+        <li><strong>Releases no longer fail on the Trivy step.</strong> Every tag since <code class="inline">v0.1.0</code> produced a red release run. The failure was in Trivy's own installer, not the scan: <code class="inline">trivy-action</code> was unpinned, resolved v0.65.0, and its install step aborted before examining a single image layer. Because <code class="inline">github-release</code> needs <code class="inline">trivy-scan</code>, Docker Publish, Helm Publish and Sign Image all succeeded and published — while the GitHub Release and Homebrew tap were skipped. Trivy is pinned to <code class="inline">v0.58.1</code>, and the SARIF upload is guarded because <code class="inline">upload-sarif</code> hard-fails on an empty file. Scan semantics are unchanged: still report-only, since distroless base-image findings have no source-level remediation. The CI filesystem scan remains the hard gate.</li>
+        <li><strong>Chart values that were silently ignored.</strong> <code class="inline">wal_max_segment_bytes</code> and <code class="inline">wal_sync_interval_ms</code> were never rendered by the ConfigMap template, so WAL segment size and fsync interval could not be tuned without hand-patching a ConfigMap that the next <code class="inline">helm upgrade</code> discards. Both are now rendered and settable.</li>
+        <li><strong>Chart default image.</strong> <code class="inline">image.repository</code> now defaults to the image the release workflow actually publishes (<code class="inline">ghcr.io/parqtel/parqtel-oss</code>), and a consistency test asserts it stays in step with the workflow.</li>
+      </ul>
+
+      <h3>Changed</h3>
+      <ul>
+        <li><strong>Probes are configurable.</strong> <code class="inline">livenessProbe</code>, <code class="inline">readinessProbe</code> and <code class="inline">startupProbe</code> were hardcoded. On start Parqtel replays whatever the WAL did not flush, and that replay is proportional to unflushed WAL — so it is slow exactly when the pod is least healthy. The hardcoded startup budget was 150 s; an install restarting with a large WAL replay exceeds it, is killed mid-replay, and restarts with an even larger WAL. Defaults reproduce the previous values exactly, and each probe can be set to <code class="inline">{}</code> to disable.</li>
+        <li><strong>The metrics write-ahead log is on by default</strong> (<code class="inline">parqtel.ingest.walEnabled</code>), matching logs. It defaulted to off, which is the wrong default for a product that acknowledges writes over HTTP: without it a crash loses up to a whole block window and the ingest path degrades to synchronous flushing, so an acknowledged write is not recoverable.</li>
+      </ul>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>Upgrading from a chart older than 0.3.1 with <code class="inline">walEnabled</code> unset turns the metrics WAL <strong>on</strong>. That is the intended direction, but it adds a bounded per-batch write. Set it explicitly if you are measuring write amplification.</p></div></div>
+
+      <h2 id="v030">v0.3.0 — second public beta <span class="tag">4 Oct 2026</span></h2>
+
+      <h3>Features</h3>
+      <ul>
+        <li><strong>Built-in alert preset packs.</strong> Five packs — <code class="inline">kubernetes-cluster</code>, <code class="inline">coredns</code>, <code class="inline">external-secrets</code>, <code class="inline">service-red</code>, <code class="inline">parqtel-self</code> — are embedded in the binary at compile time and activated by <code class="inline">[alerts.presets]</code> (<code class="inline">mode = auto | all | off</code>, default <code class="inline">auto</code>; <code class="inline">include</code> wins over <code class="inline">exclude</code> with a warning). Activation is insert-if-absent, so user rules from <code class="inline">rules_dir</code> and API disables/deletes always win.</li>
+        <li><strong>MCP live tools.</strong> <code class="inline">parqtel-mcp-parqtel</code> now serves live data through real tools — PromQL (instant, absolute range or trailing window), label discovery, logs, ingest rates, alerts, noise statistics and topology — instead of echoing parameters back. The MCP framework gains a spec-compliant <strong>Streamable HTTP</strong> transport (<code class="inline">POST/GET/DELETE /mcp</code>), with the legacy <code class="inline">/tools/*</code> routes kept as deprecated aliases.</li>
+        <li><strong>Overview console.</strong> The Overview pane is rebuilt around live signal rollups: per-signal rate cards, storage and ingest-volume charts.</li>
+        <li><strong>OpenTelemetry self-telemetry.</strong> <code class="inline">parqtel-server</code> exports its own traces and SLI metrics (HTTP golden signals, ingest throughput, flush duration/rows, buffer saturation, RSS high-water mark) over OTLP, with CPU profiling endpoints under <code class="inline">/debug/pprof</code>. Configured by <code class="inline">telemetry.*</code>; the <code class="inline">parqtel-self</code> preset pack alerts on it.</li>
+      </ul>
+
+      <h3>Fixes</h3>
+      <ul>
+        <li><strong>The AST evaluator miscounted series and ignored result limits.</strong> <code class="inline">execute_ast</code> counted one series per <em>point</em> and applied no limits, so <code class="inline">query.max_series</code> and <code class="inline">query.max_samples_per_series</code> were silently ignored for nested range selectors and most composed PromQL. It now groups points by fingerprint first and evaluates matchers once per distinct label set, so both query engines report the same <code class="inline">total_series_count</code> under the same configured memory bound.</li>
+        <li><strong><code class="inline">min()</code> folded the same value twice</strong> — the fold was re-evaluated to produce the value it had just computed.</li>
+        <li><strong><code class="inline">/api/v1/label/:name/values</code> missed buffered series.</strong> The in-memory buffer is now included.</li>
+        <li><strong>gRPC and HTTP disagreed on batch size.</strong> tonic's 4 MiB default beat <code class="inline">ingest.max_body_size</code> (10 MiB), so a batch that succeeded over HTTP failed over gRPC with an opaque <code class="inline">ResourceExhausted</code>. gRPC message limits are now derived from <code class="inline">ingest.max_body_size</code>.</li>
+        <li><strong>Alerts evaluated over a hardcoded 300 s window.</strong> They now use <code class="inline">query.lookback_delta_ns</code>, the same window an operator sees in the UI.</li>
+        <li><strong>The documented <code class="inline">PARQTEL__SECTION__KEY</code> env spelling was silently ignored.</strong> <code class="inline">Env::prefixed("PARQTEL_")</code> left an empty first key segment, so every env example in the docs had no effect; the double-underscore form now works (single-underscore still does).</li>
+        <li><strong>MCP label matchers rejected dotted label names</strong> via the percent-encoded path segment.</li>
+        <li><strong>The metrics UI timeline</strong> was corrected.</li>
+      </ul>
+
+      <h3>Configuration</h3>
+      <p>New options: <code class="inline">storage.compression_level</code> and <code class="inline">logs.compression_level</code> (zstd 1–22, one shared resolver for the block writers and the compactor), <code class="inline">[alerts.presets]</code> (<code class="inline">mode</code>, <code class="inline">include</code>, <code class="inline">exclude</code>), and <code class="inline">telemetry.*</code> (OTLP export and profiling). Config validation now rejects a <code class="inline">row_group_size</code> of 0 or above <code class="inline">max_rows_per_block</code> — a combination that silently disabled row-group pruning.</p>
+
+      <h3>Security</h3>
+      <ul>
+        <li>Dropped vulnerable <code class="inline">protobuf</code> 2.x and <code class="inline">quick-xml</code> from the pprof feature set.</li>
+        <li>CodeQL analysis added to CI, so the repository ruleset's <code class="inline">code_scanning</code> rule is no longer vacuous.</li>
+      </ul>
+
+      <h2 id="v020">v0.2.0 — initial public beta</h2>
+      <p>The release where the durability story landed. Measured before/after numbers for every item below are on the <a href="performance.html">performance</a> page.</p>
+
+      <h3>Durability</h3>
+      <ul>
+        <li><strong>Write-ahead log</strong> (<code class="inline">parqtel-core/src/wal</code>), on by default. Bounds crash loss to <code class="inline">ingest.wal_sync_interval_ms</code> (1 s) rather than the whole block window (2 h by default). A torn tail from a crash mid-append is detected by per-record CRC and truncated on replay. Replays across metrics, logs and traces are verified against killed containers.</li>
+        <li><strong>Durable index before WAL commit.</strong> A flush waits for the block-index sidecar to be durable before committing the WAL, and fails <em>safe</em> on timeout by leaving the WAL uncommitted. Without this, a crash left acknowledged data on disk, absent from the index, and already marked recovered.</li>
+        <li><strong>Self-healing block index.</strong> At startup the index is reconciled against the data directory in both directions: unknown blocks are adopted from their Parquet footer, and entries whose file has gone are dropped.</li>
+        <li><strong>Background flush.</strong> A request that crosses the block cap is acknowledged once the WAL has its rows rather than after the encode. Requires a WAL; with <code class="inline">ingest.wal_enabled = false</code> the worker refuses to start and flushing stays synchronous.</li>
+        <li><strong>Sharded metrics ingest.</strong> Unrelated metrics ingest concurrently while a flush encodes, with the per-shard WAL order matching the writer order.</li>
+      </ul>
+
+      <h3>Performance</h3>
+      <ul>
+        <li><strong>Query evaluation.</strong> Label sets are shared behind an <code class="inline">Arc</code> throughout the evaluator instead of being cloned per series per <em>step</em> — ~20 M string allocations per panel eliminated. Aggregation groups are keyed by fingerprint with the group's label set built once per distinct group. Step results are folded into the response as they are produced rather than all being retained: peak memory for a wide panel dropped from 168 MB to 110 MB.</li>
+        <li><strong>Log and trace search.</strong> Queries are <em>prepared</em> once per request — regexes and wildcards compiled, needles lowercased — rather than per row, with an allocation-free ASCII-case-folded substring scan. Measured 205× on a representative query.</li>
+        <li><strong>Query parallelism.</strong> Evaluation runs on the blocking pool, so a wide range query cannot starve an async worker. Four concurrent queries run ~3.5× faster than sequentially.</li>
+        <li><strong>Block pruning.</strong> Rows are written grouped by metric name, so a row group's <code class="inline">metric_name</code> and <code class="inline">service_name</code> statistics are exact. The reader uses them to skip row groups, plus bloom filters on the same columns. A single-metric query is ~12.9× faster; a service-scoped one ~4.8×.</li>
+        <li><strong>Column projection.</strong> The metrics scan reads 7 of 15 columns; a full-block scan is ~28 % cheaper.</li>
+        <li><strong>Storage lifecycle.</strong> Compaction covers trace blocks (previously skipped entirely, so they accumulated until retention deleted them), merge limits are configurable rather than literal, and a cycle performs a bounded number of merges instead of one per signal.</li>
+      </ul>
+
+      <h3>Fixes</h3>
+      <ul>
+        <li><strong>Credentials nested in an array reached the MCP audit log in the clear.</strong> The parameter sanitiser recursed into arrays, but the function it called returns non-objects unchanged — so <code class="inline">[{ "token": … }]</code> was logged verbatim. Recursion now handles arrays and objects uniformly, and the sensitive-key list covers <code class="inline">authorization</code>, <code class="inline">auth</code>, <code class="inline">session</code>, <code class="inline">cookie</code> and <code class="inline">private</code>.</li>
+        <li><strong>The Kubernetes readiness probe did not check anything.</strong> <code class="inline">/health</code> is a static <code class="inline">200</code> and was wired to liveness, readiness <em>and</em> startup, so a pod was marked ready while its storage was failing. Added <code class="inline">/ready</code>, which reads block-index metadata, and pointed readiness at it.</li>
+        <li><strong>Oversized ingest batches lost half their data.</strong> A batch larger than the block cap was rejected with <code class="inline">400 Block writer buffer is full</code> <em>after</em> part of it had been accepted. It is now split across blocks and ingested in full.</li>
+        <li><strong><code class="inline">max_body_size</code> was not honoured.</strong> axum's 2 MB default silently beat the configured 10 MiB, so raising it changed nothing and large batches failed with an unexplained <code class="inline">413</code>.</li>
+        <li><strong>Compaction discarded the label-value index.</strong> Merged blocks were written with an empty dictionary, degrading <code class="inline">/api/v1/label/:name/values</code> on every compaction pass.</li>
+        <li><strong>A query series selector could be routed incorrectly</strong> when the selector matched more than one metric name.</li>
+        <li><strong>The trace block index was not persisted</strong> like every other signal — fixed in <code class="inline">v0.3.1</code>'s follow-up, PR #72.</li>
+      </ul>
+
+      <h3>Observability</h3>
+      <p>Added <code class="inline">parqtel_ingest_lock_wait_seconds</code>, <code class="inline">parqtel_flush_duration_seconds</code>, <code class="inline">parqtel_flush_inflight</code>, <code class="inline">parqtel_flush_rows_total</code>, <code class="inline">parqtel_index_lock_wait_seconds</code>, <code class="inline">parqtel_index_sidecar_bytes</code>, <code class="inline">parqtel_index_pending_writes</code> and <code class="inline">parqtel_ingest_rotator_shards</code>. <code class="inline">/metrics</code> no longer reads <code class="inline">/proc</code>.</p>
+
+      <h2 id="v010">v0.1.0 — initial internal release</h2>
+
+      <div class="callout info"><div class="c-ic">↗</div><div><p>Known limitations are collected on the <a href="operations.html">known issues</a> page rather than scattered across release notes — read it before deploying.</p></div></div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
+    </div>
+  </footer>
+  <script src="../assets/js/site.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>API Reference · Parqtel Docs</title>
-  <meta name="description" content="Parqtel HTTP API: OTLP ingestion, Prometheus-compatible query, logs, alerts, pipelines/recording rules, Grafana SimpleJSON, and operations endpoints.">
+  <meta name="description" content="The complete Parqtel HTTP API: OTLP ingestion, Prometheus-compatible query, logs, traces, correlation, pipelines, alerting, Grafana SimpleJSON, and operations endpoints including /health, /ready, /metrics and /debug/pprof.">
   <link rel="icon" href="../assets/img/logo.svg">
   <link rel="stylesheet" href="../assets/css/site.css">
 </head>
@@ -28,116 +28,152 @@
 
   <div class="container docs-layout">
     <aside class="sidebar">
-      <div class="group-label">Reference</div>
-      <a href="api.html">API Reference</a>
-      <a href="api.html#ingestion">Ingestion (OTLP)</a>
-      <a href="api.html#query">Query (PromQL)</a>
-      <a href="api.html#logs">Logs</a>
-      <a href="api.html#alerts">Alerts</a>
-      <a href="api.html#pipelines">Pipelines &amp; Rules</a>
-      <a href="api.html#simplejson">Grafana SimpleJSON</a>
-      <a href="api.html#ops">Operations</a>
-      <a href="query-functions.html">Query Functions</a>
-      <a href="mcp.html">MCP Servers</a>
-      <a href="faq.html">FAQ</a>
-      <div class="group-label">UI</div>
-      <a href="screenshots.html">Screenshots</a>
-      <a href="api-explorer.html">API Explorer</a>
       <div class="group-label">Learn</div>
       <a href="architecture.html">Architecture</a>
-      <a href="getting-started.html">Get Started</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
       <a href="deployment.html">Deployment</a>
+      <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API explorer</a>
     </aside>
 
     <main class="docs-main">
       <h1>API Reference</h1>
-      <p class="lead">Parqtel exposes a Prometheus-compatible HTTP API plus OTLP ingestion and Grafana SimpleJSON. The full contract is also served as OpenAPI 3.0 at <code class="inline">/oas</code>.</p>
-      <div class="callout info"><div class="c-ic">↗</div><div><p>Prefer an interactive view? <a href="api-explorer.html">Open the API Explorer</a> — search and expand every operation straight from the OpenAPI spec.</p></div></div>
+      <p class="lead">Parqtel exposes a Prometheus-compatible HTTP API, OTLP ingestion over HTTP and gRPC, Grafana SimpleJSON, a full alerting surface and a set of operations endpoints.</p>
+
+      <div class="callout info"><div class="c-ic">↗</div><div><p>Prefer an interactive view? <a href="api-explorer.html">Open the API Explorer</a> — search and expand every operation straight from the OpenAPI spec. The spec is also served live at <code class="inline">/oas</code>.</p></div></div>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>There is no authentication.</strong> Every endpoint below — including ingestion and the OTLP gRPC port — is unauthenticated, and CORS is open to any origin. Do not expose ports <code class="inline">8080</code> or <code class="inline">4317</code> publicly. Put a reverse proxy or service mesh in front that terminates TLS and authenticates. The embedded console reads and writes with the same privileges as the API.</p></div></div>
 
       <h2 id="ingestion">Ingestion (OTLP)</h2>
-      <p>All ingest endpoints accept protobuf or JSON (content-type negotiation). The <code class="inline">/json</code> variants accept OTLP/JSON.</p>
+      <p>All ingest endpoints accept protobuf or OTLP/JSON. The bare paths content-negotiate on <code class="inline">Content-Type</code>; the <code class="inline">/json</code> variants accept OTLP/JSON directly. The same payloads are also accepted over <strong>OTLP gRPC on <code class="inline">:4317</code></strong> (tonic, all three collector services) through an identical decode path.</p>
       <table>
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/metrics</code></td><td>Ingest metrics (protobuf)</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/metrics/json</code></td><td>Ingest metrics (JSON)</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/logs</code></td><td>Ingest logs (protobuf)</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/logs/json</code></td><td>Ingest logs (JSON)</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/traces</code></td><td>Ingest traces (protobuf)</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/traces/json</code></td><td>Ingest traces (JSON)</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/metrics</code></td><td>Ingest metrics (protobuf or JSON)</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/metrics/json</code></td><td>Ingest metrics (OTLP/JSON)</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/logs</code></td><td>Ingest logs (protobuf or JSON)</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/logs/json</code></td><td>Ingest logs (OTLP/JSON)</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/traces</code></td><td>Ingest spans</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/traces/json</code></td><td>Ingest spans (OTLP/JSON)</td></tr>
         </tbody>
       </table>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl -X POST http://localhost:9090/v1/metrics/json \
-  -H "Content-Type: application/json" \
-  -d '{"resourceMetrics":[{"resource":{"attributes":[
-    {"key":"service.name","value":{"stringValue":"demo"}}]},
-    "scopeMetrics":[{"metrics":[{"name":"http_requests_total",
-    "gauge":{"dataPoints":[{"asDouble":42,
-    "timeUnixNano":"1700000000000000000",
-    "attributes":[{"key":"method","value":{"stringValue":"GET"}}]}]}}]}]}]}'</code></pre></div>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl -X POST http://localhost:8080/v1/metrics/json \
+-H "Content-Type: application/json" \
+-d '{"resourceMetrics":[{"resource":{"attributes":[
+{"key":"service.name","value":{"stringValue":"demo"}}]},
+"scopeMetrics":[{"metrics":[{"name":"http_requests_total",
+"gauge":{"dataPoints":[{"asDouble":42,
+"timeUnixNano":"1700000000000000000",
+"attributes":[{"key":"method","value":{"stringValue":"GET"}}]}]}}]}]}]}'</code></pre></div>
+      <ul>
+        <li>Body limit <code class="inline">ingest.max_body_size</code> (default 10 MB), applied consistently to HTTP and used to derive gRPC message limits. Oversized batches are <strong>split across blocks</strong>, not rejected.</li>
+        <li>A write is acknowledged once the row is in the <strong>write-ahead log</strong>, not once the block is on disk — see <a href="durability.html">Durability &amp; recovery</a>.</li>
+        <li>Server-kind spans additionally derive <code class="inline">traces_service_{requests,errors,duration_ms}_total</code> metrics.</li>
+      </ul>
 
       <h2 id="query">Query (Prometheus-compatible)</h2>
       <table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Parameters</th></tr></thead>
         <tbody>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/query</code></td><td>Instant query</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/query_range</code></td><td>Range query</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/labels</code></td><td>List all label names</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/label/__name__/values</code></td><td>List metric names</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/label/:name/values</code></td><td>List values for a label</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/query</code></td><td><code class="inline">query</code> (req), <code class="inline">time</code> (optional)</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/query_range</code></td><td><code class="inline">query</code>, <code class="inline">start</code>, <code class="inline">end</code>, <code class="inline">step</code> (all req)</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/labels</code></td><td>—</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/label/__name__/values</code></td><td>—</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/label/{name}/values</code></td><td><code class="inline">limit</code> (clamped to 100), <code class="inline">match</code> prefix filter</td></tr>
         </tbody>
       </table>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl "http://localhost:9090/api/v1/query?query=http_requests_total"
-curl "http://localhost:9090/api/v1/query_range?query=rate(http_requests_total[5m])&start=1700000000&end=1700003600&step=60s"</code></pre></div>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl "http://localhost:8080/api/v1/query?query=http_requests_total"
+curl "http://localhost:8080/api/v1/query_range?query=rate(http_requests_total[5m])&amp;start=1700000000&amp;end=1700003600&amp;step=60"
+curl "http://localhost:8080/api/v1/label/service.name/values?limit=20&amp;match=web-"</code></pre></div>
+      <p class="muted"><code class="inline">/api/v1/label/__name__/values</code> includes buffered series as well as flushed ones. Instant queries use the 5-minute lookback (<code class="inline">query.lookback_delta_ns</code>); see <a href="operations.html#lookback">known issues</a>. Supported PromQL: <a href="query-functions.html">Query functions</a>.</p>
 
       <h2 id="logs">Logs</h2>
+      <p>Filter grammar: <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/PQL_GUIDE.md">ParqtelQL</a>.</p>
       <table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Parameters</th></tr></thead>
         <tbody>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/logs</code></td><td>Query logs with filters</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/logs/count</code></td><td>Count matching logs</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/logs/fields</code></td><td>List available log fields</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/logs/field_values</code></td><td>List values for a log field</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/logs</code></td><td><code class="inline">query</code>, <code class="inline">start</code>, <code class="inline">end</code> (req) · <code class="inline">limit</code> · <code class="inline">order</code> · <code class="inline">severity_min</code> · <code class="inline">search</code></td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/logs/count</code></td><td><code class="inline">query</code>, <code class="inline">start</code>, <code class="inline">end</code></td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/logs/fields</code></td><td>— — returns dedicated columns and common attributes</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/logs/field_values</code></td><td><code class="inline">field_name</code>, <code class="inline">limit</code>, <code class="inline">q</code> prefix</td></tr>
         </tbody>
       </table>
 
-      <h2 id="alerts">Alerts</h2>
+      <h2 id="traces">Traces &amp; correlation</h2>
       <table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Parameters</th></tr></thead>
         <tbody>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/alerts</code></td><td>List all alerts</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/alerts/:id</code></td><td>Get alert details</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/alerts/:id/acknowledge</code></td><td>Acknowledge an alert</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/alerts/:id/resolve</code></td><td>Resolve an alert</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/rules</code></td><td>List alert rules</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/rules</code></td><td>Create an alert rule</td></tr>
-          <tr><td><span class="badge-tag put">PUT</span></td><td><code class="inline">/api/v1/rules/:id</code></td><td>Update a rule</td></tr>
-          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/rules/:id</code></td><td>Delete a rule</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/traces/search</code></td><td><code class="inline">start</code>, <code class="inline">end</code>, <code class="inline">trace_id</code>, <code class="inline">q</code>, <code class="inline">limit</code> (default 200, max 10 000)</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/v1/correlate</code></td><td><code class="inline">anchor_signal</code>, <code class="inline">anchor_timestamp_ns</code>, <code class="inline">anchor_labels</code> (JSON), <code class="inline">target_signal</code>, <code class="inline">window_ns</code> (default 5 s), <code class="inline">limit</code> (default 50)</td></tr>
         </tbody>
       </table>
+      <p>Trace search returns <strong>spans</strong>, each carrying its <code class="inline">trace_id</code> for client-side grouping. Span predicates (<code class="inline">q</code>) are pushed down <em>into</em> the scan, before the result cap, so a filter never loses matches to truncation.</p>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>Two known spec/code mismatches</strong> in this area, which also exist in <code class="inline">openapi.yaml</code>: the published spec documents <code class="inline">service</code>, <code class="inline">operation</code>, <code class="inline">min_duration_ms</code> and <code class="inline">max_duration_ms</code> for <code class="inline">/v1/traces/search</code>, but <strong>the handler ignores all four</strong> — only <code class="inline">trace_id</code> and <code class="inline">q</code> are honoured. And <code class="inline">target_signal</code> is compared as the <strong>singular</strong> <code class="inline">"metric"</code> / <code class="inline">"log"</code>, not the plural forms the spec lists. Filter spans with <code class="inline">q</code> and pass singular signal names to correlate.</p></div></div>
 
-      <h2 id="pipelines">Pipelines &amp; Recording Rules</h2>
+      <h2 id="pipelines">Pipelines &amp; saved searches</h2>
       <table>
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/recording_rules</code></td><td>List recording rule groups</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/recording_rules</code></td><td>Create a recording rule group</td></tr>
-          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/recording_rules/:name</code></td><td>Delete a recording rule group</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/v1/search</code></td><td>Run a ParqtelQL pipeline over all three signals</td></tr>
           <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/pipelines</code></td><td>List pipeline definitions</td></tr>
           <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/pipelines</code></td><td>Create a pipeline</td></tr>
-          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/pipelines/:name</code></td><td>Delete a pipeline</td></tr>
+          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/pipelines/{name}</code></td><td>Delete a pipeline</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/recording_rules</code></td><td>List recording rules</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/recording_rules</code></td><td>Create a recording rule</td></tr>
+          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/recording_rules/{name}</code></td><td>Delete a recording rule</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/saved_searches</code></td><td>List saved searches</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/saved_searches</code></td><td>Save a search</td></tr>
+          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/saved_searches/{id}</code></td><td>Delete a saved search</td></tr>
         </tbody>
       </table>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl -X POST http://localhost:8080/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"fetch logs | filter severityText=\"ERROR\" | correlate traces window=2s","start":1700000000,"end":1700003600}'</code></pre></div>
 
-      <h2 id="simplejson">Grafana SimpleJSON</h2>
+      <h2 id="alerts">Alerts &amp; rules</h2>
       <table>
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/search</code></td><td>List available metrics</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/query</code></td><td>Execute a time-series query</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/annotations</code></td><td>Query annotations</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/tag-keys</code></td><td>List tag keys</td></tr>
-          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/tag-values</code></td><td>List tag values</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/alerts</code></td><td>List alert instances</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/alerts/{id}</code></td><td>Get one alert</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/alerts/{id}/acknowledge</code></td><td>Acknowledge</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/alerts/{id}/resolve</code></td><td>Resolve</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/rules</code></td><td>List rules</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/rules</code></td><td>Create a rule</td></tr>
+          <tr><td><span class="badge-tag put">PUT</span></td><td><code class="inline">/api/v1/rules/{id}</code></td><td>Update a rule</td></tr>
+          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/rules/{id}</code></td><td>Delete a rule</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/alerts/routes</code></td><td>List notification routes</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/alerts/routes</code></td><td>Set notification routes</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/alerts/silences</code></td><td>List silences</td></tr>
+          <tr><td><span class="badge-tag post">POST</span></td><td><code class="inline">/api/v1/alerts/silences</code></td><td>Create a silence</td></tr>
+          <tr><td><span class="badge-tag del">DELETE</span></td><td><code class="inline">/api/v1/alerts/silences/{name}</code></td><td>Delete a silence</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">One alert instance per result series, fingerprinted by <code class="inline">id</code> plus the series labels. Alert rules use the query <em>plan</em> path — see <a href="operations.html#alert-limits">the limitation</a>.</p>
+
+      <h2 id="simplejson">Grafana SimpleJSON</h2>
+      <p>All <code class="inline">POST</code>, all JSON bodies.</p>
+      <table>
+        <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">/search</code></td><td>List datasources</td></tr>
+          <tr><td><code class="inline">/query</code></td><td>Execute a query</td></tr>
+          <tr><td><code class="inline">/annotations</code></td><td>List annotations (e.g. alert events)</td></tr>
+          <tr><td><code class="inline">/tag-keys</code></td><td>List label names</td></tr>
+          <tr><td><code class="inline">/tag-values</code></td><td>List label values</td></tr>
         </tbody>
       </table>
 
@@ -145,15 +181,70 @@ curl "http://localhost:9090/api/v1/query_range?query=rate(http_requests_total[5m
       <table>
         <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/health</code></td><td>Health check</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/metrics</code></td><td>Prometheus metrics (self-monitoring, incl. <code class="inline">parqtel_ingest_rate_per_sec</code>, <code class="inline">parqtel_ingest_bytes_per_sec</code>, <code class="inline">parqtel_ingest_gap_secs</code>)</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/oas</code></td><td>OpenAPI 3.0 specification</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/ui</code></td><td>Built-in web UI</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/stats</code></td><td>Storage / buffer / config snapshot (blocks, rows, disk bytes per signal)</td></tr>
-          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/ingest_rates</code></td><td>Live per-signal ingestion rates — current + 60s/5m/15m averages, wire bytes/sec, gap detection, 180s sparkline history</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/health</code></td><td>Liveness. Static <code class="inline">200 {"status":"ok"}</code>.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/ready</code></td><td><strong>Readiness.</strong> Reads block-index metadata; <code class="inline">503 {"status":"not ready", …}</code> when storage is unusable.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/metrics</code></td><td>Prometheus metrics.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/stats</code></td><td>Storage, buffer and config snapshot per signal.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/api/v1/ingest_rates</code></td><td>Live per-signal rates: current, 60 s/5 m/15 m averages, <code class="inline">gap_secs</code> spike/gap detection, and a per-second sparkline via <code class="inline">history_secs</code> (default 180, max 900).</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/oas</code></td><td>The OpenAPI 3.0 specification.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/ui</code></td><td>The embedded console.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/</code></td><td>Redirects to <code class="inline">/ui</code>.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/debug/pprof/summary</code></td><td>Hot frames over a window. <code class="inline">404</code> unless <code class="inline">telemetry.profiling_enabled</code>.</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/debug/pprof/memory</code></td><td>Memory decomposition (live buffer, RSS, high-water mark).</td></tr>
+          <tr><td><span class="badge-tag get">GET</span></td><td><code class="inline">/debug/pprof/profile</code></td><td>CPU profile (protobuf, for <code class="inline">go tool pprof</code>).</td></tr>
         </tbody>
       </table>
-      <div class="callout info"><div class="c-ic">↗</div><div><p>See the <a href="query-functions.html">Query Functions</a> reference for supported PromQL operations, constraints, and not-yet-supported features.</p></div></div>
+      <div class="callout"><div class="c-ic">ℹ</div><div><p>Profiling is gated by <code class="inline">telemetry.profiling_enabled</code> and serialized by a process-wide lock — a second capture while one runs returns <code class="inline">429</code>.</p></div></div>
+
+      <h3>Metrics worth alerting on</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>parqtel_process_rss_bytes                # resident memory (the dominant sizing risk)
+parqtel_process_rss_hwm_bytes           # high-water mark
+parqtel_buffer_points / _logs / _spans  # buffered points per signal
+parqtel_ingested_points_total           # accepted points
+parqtel_ingest_errors_total             # rejected batches
+parqtel_ingest_lock_wait_seconds        # rotator lock contention → raise rotator_shards
+parqtel_flush_duration_seconds          # Parquet encode time
+parqtel_flush_inflight                  # background flush worker saturation
+parqtel_flush_rows_total                # rows per flush, per signal
+parqtel_index_sidecar_bytes             # index.json size, per signal
+parqtel_index_pending_writes            # mutations queued for the next sidecar write
+parqtel_storage_blocks / _bytes / _rows # per signal
+parqtel_query_duration_seconds          # query latency
+parqtel_query_errors_total              # query failures
+parqtel_ingest_gap_secs                 # silence/gap detection</code></pre></div>
+
+      <h2 id="errors">Errors and limits</h2>
+      <table>
+        <thead><tr><th>Status</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">400</code></td><td>Malformed OTLP, invalid query, or a predicate parse error.</td></tr>
+          <tr><td><code class="inline">404</code></td><td>Unknown route, or a <code class="inline">/debug/pprof/*</code> endpoint while profiling is disabled.</td></tr>
+          <tr><td><code class="inline">413</code></td><td>Request body exceeds <code class="inline">ingest.max_body_size</code>.</td></tr>
+          <tr><td><code class="inline">408</code></td><td>Request exceeded the <code class="inline">query.timeout_secs</code> middleware timeout — applied to every route, ingest included.</td></tr>
+          <tr><td><code class="inline">429</code></td><td>A profiling capture is already in progress — captures are serialized by a process-wide lock.</td></tr>
+          <tr><td><code class="inline">500</code></td><td>Internal error — including a WAL append failure. The write is <em>not</em> acknowledged.</td></tr>
+          <tr><td><code class="inline">503</code></td><td>Readiness check failed (<code class="inline">/ready</code> only).</td></tr>
+        </tbody>
+      </table>
+      <p>Middleware: CORS (any origin), HTTP tracing, a request timeout of <code class="inline">query.timeout_secs</code>, and body limits of <code class="inline">ingest.max_body_size</code> applied twice — axum's default limit and a request-body-limit layer — so the configured value is authoritative. Error envelopes are <em>not</em> uniform: Prometheus routes return <code class="inline">{status, errorType, error}</code>, Parqtel routes <code class="inline">{status, error}</code>, alert routes <code class="inline">{error}</code> with no <code class="inline">status</code>, and Grafana SimpleJSON swallows errors and returns <code class="inline">200 []</code>.</p>
+
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>Result limits truncate silently.</strong> Exceeding <code class="inline">query.max_series</code> or <code class="inline">query.max_samples_per_series</code> produces <em>no</em> error and <em>no</em> status code — the response is simply shorter. Detect it client-side from <code class="inline">totalSeriesCount</code> (the pre-truncation match count) and <code class="inline">volume_summary</code>. Logs and traces do carry explicit <code class="inline">truncated</code> booleans. Also note the two engine paths keep <strong>different</strong> samples when truncating: the AST path keeps the oldest N, the legacy plan path keeps the first N in scan order.</p></div></div>
+
+      <h2 id="spec">OpenAPI spec accuracy</h2>
+      <p>The spec at <code class="inline">/oas</code> is broadly useful but is not authoritative. Known divergences, in rough severity order:</p>
+      <ul>
+        <li><code class="inline">/v1/logs/field_values</code> documents the parameter as <code class="inline">field</code>; the handler reads <strong><code class="inline">field_name</code></strong>. A documented call returns values for the empty field.</li>
+        <li><code class="inline">/v1/traces/search</code> documents <code class="inline">service</code>, <code class="inline">operation</code>, <code class="inline">min_duration_ms</code>, <code class="inline">max_duration_ms</code> — all four are <strong>ignored</strong>.</li>
+        <li><code class="inline">/v1/traces</code> is documented as accepting protobuf, but the route serves the JSON handler with no content negotiation (unlike <code class="inline">/v1/metrics</code> and <code class="inline">/v1/logs</code>).</li>
+        <li><code class="inline">/api/v1/rules</code> POST/PUT is documented as <code class="inline">application/json</code>; the body is a <strong>raw string parsed as YAML</strong>.</li>
+        <li><code class="inline">/v1/correlate</code>: documented <code class="inline">window_ns</code> default is 300&nbsp;s, the code uses <strong>5&nbsp;s</strong>; <code class="inline">target_signal</code> is documented as plural but compared as singular.</li>
+        <li><code class="inline">/api/v1/logs</code> <code class="inline">limit</code> is documented with default 100; the code uses <strong>1000</strong>.</li>
+        <li><strong>15 routes are missing from the spec entirely</strong>, including <code class="inline">/</code>, <code class="inline">/ui</code>, <code class="inline">/oas</code>, <code class="inline">/debug/pprof/*</code>, <code class="inline">/v1/search</code>, <code class="inline">/api/v1/saved_searches</code> (×3), <code class="inline">/api/v1/alerts/routes</code> and <code class="inline">/api/v1/alerts/silences</code> (×2).</li>
+        <li>The spec's <code class="inline">info.version</code> still reads <code class="inline">0.1.0</code> and does not track releases.</li>
+      </ul>
+      <p>The table at the top of this page is derived from the router in source, not from the spec.</p>
+
+      <div class="callout"><div class="c-ic">↗</div><div><p>Related: <a href="query-functions.html">Query functions</a> · <a href="configuration.html">Configuration reference</a> · <a href="mcp.html">MCP servers</a></p></div></div>
     </main>
   </div>
 
@@ -161,11 +252,11 @@ curl "http://localhost:9090/api/v1/query_range?query=rate(http_requests_total[5m
     <div class="container">
       <div class="footer-grid">
         <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
-        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="query-functions.html">Query Functions</a><a href="screenshots.html">UI Screenshots</a><a href="api-explorer.html">API Explorer</a></div>
-        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
-        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
       </div>
-      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
     </div>
   </footer>
   <script src="../assets/js/site.js"></script>

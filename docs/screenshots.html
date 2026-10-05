@@ -28,19 +28,26 @@
 
   <div class="container docs-layout">
     <aside class="sidebar">
-      <div class="group-label">Reference</div>
-      <a href="api.html">API Reference</a>
-      <a href="api-explorer.html">API Explorer</a>
-      <a href="query-functions.html">Query Functions</a>
-      <a href="mcp.html">MCP Servers</a>
-      <a href="faq.html">FAQ</a>
-      <div class="group-label">UI</div>
-      <a href="screenshots.html">Screenshots</a>
       <div class="group-label">Learn</div>
       <a href="architecture.html">Architecture</a>
-      <a href="getting-started.html">Get Started</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
       <a href="deployment.html">Deployment</a>
       <a href="configuration.html">Configuration</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
+      <div class="group-label">Reference</div>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
+      <a href="faq.html">FAQ</a>
+      <div class="group-label">Console</div>
+      <a href="screenshots.html">Screenshots</a>
+      <a href="api-explorer.html">API explorer</a>
     </aside>
 
     <main class="docs-main">
@@ -76,9 +83,10 @@
       </div>
 
       <h2>Run it yourself</h2>
-      <p>Start Parqtel and open <code class="inline">http://localhost:9090/ui</code>:</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>docker run -d --name parqtel -p 8080:8080 \
-  -v parqtel_data:/var/lib/parqtel parqtel/parqtel:latest
+      <p>Start Parqtel and open <code class="inline">http://localhost:8080/ui</code>:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>docker run -d --name parqtel -p 8080:8080 -p 4317:4317 \
+  -v parqtel_data:/data \
+  ghcr.io/parqtel/parqtel-oss:0.3.1
 # → http://localhost:8080/ui</code></pre></div>
       <div class="callout info"><div class="c-ic">↗</div><div><p>For production dashboards, point Grafana at Parqtel as a <a href="api.html#simplejson">SimpleJSON datasource</a>.</p></div></div>
     </main>
@@ -88,11 +96,11 @@
     <div class="container">
       <div class="footer-grid">
         <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
-        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="api-explorer.html">API Explorer</a><a href="query-functions.html">Query Functions</a></div>
-        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="screenshots.html">UI Screenshots</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
-        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
       </div>
-      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
     </div>
   </footer>
   <script src="../assets/js/site.js"></script>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Deployment · Parqtel Docs</title>
-  <meta name="description" content="Deploy Parqtel from a single Docker container to production Kubernetes with Helm — plus systemd for bare metal and production hardening recommendations.">
+  <meta name="description" content="Deploy Parqtel from a single container to production Kubernetes with Helm — image details, WAL and probe values, Argo Rollouts progressive delivery, systemd for bare metal, and production hardening.">
   <link rel="icon" href="../assets/img/logo.svg">
   <link rel="stylesheet" href="../assets/css/site.css">
 </head>
@@ -30,107 +30,206 @@
     <aside class="sidebar">
       <div class="group-label">Learn</div>
       <a href="architecture.html">Architecture</a>
-      <a href="getting-started.html">Get Started</a>
+      <a href="storage.html">Storage engine</a>
+      <a href="durability.html">Durability &amp; recovery</a>
+      <a href="performance.html">Performance</a>
+      <div class="group-label">Get started</div>
+      <a href="getting-started.html">Getting started</a>
       <a href="deployment.html">Deployment</a>
       <a href="configuration.html">Configuration</a>
-      <div class="group-label">Deployment targets</div>
-      <a href="deployment.html#docker">Docker</a>
-      <a href="deployment.html#brew">Homebrew</a>
-      <a href="deployment.html#compose">Docker Compose</a>
-      <a href="deployment.html#kubernetes">Kubernetes / Helm</a>
-      <a href="deployment.html#systemd">systemd</a>
-      <a href="deployment.html#production">Production notes</a>
+      <div class="group-label">Operations</div>
+      <a href="operations.html">Known issues</a>
+      <a href="release-notes.html">Release notes</a>
       <div class="group-label">Reference</div>
-      <a href="api.html">API Reference</a>
-      <a href="query-functions.html">Query Functions</a>
-      <a href="mcp.html">MCP Servers</a>
+      <a href="api.html">API reference</a>
+      <a href="query-functions.html">Query functions</a>
+      <a href="mcp.html">MCP servers</a>
       <a href="faq.html">FAQ</a>
-          <div class="group-label">UI</div>
+      <div class="group-label">Console</div>
       <a href="screenshots.html">Screenshots</a>
-      <a href="api-explorer.html">API Explorer</a>
+      <a href="api-explorer.html">API explorer</a>
     </aside>
 
     <main class="docs-main">
       <h1>Deployment</h1>
-      <p class="lead">From a single container to production Kubernetes — Parqtel deploys anywhere a Linux binary or OCI image runs.</p>
+      <p class="lead">From a single container to production Kubernetes — Parqtel deploys anywhere a Linux binary or OCI image runs. This page tracks chart <strong>v0.3.1</strong>.</p>
 
-      <h2 id="docker">Docker (single container)</h2>
-      <p>A 4-stage build: a cargo-chef planner, dependency cook, binary build, then a <code class="inline">gcr.io/distroless/cc-debian12:nonroot</code> runtime (~15&nbsp;MB, no shell).</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>docker build -t parqtel:local .
-docker run -d \
+      <h2 id="docker">Container image</h2>
+      <p>Published to GitHub Container Registry, multi-arch (<code class="inline">linux/amd64</code>, <code class="inline">linux/arm64</code>), cosign-signed with an SBOM and provenance attestation.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>docker run -d \
   --name parqtel \
   -p 8080:8080 \
-  -v parqtel_data:/var/lib/parqtel \
-  -e PARQTEL__STORAGE__DATA_DIR=/var/lib/parqtel/data \
-  -e PARQTEL__LOGS__DATA_DIR=/var/lib/parqtel/logs \
-  -e PARQTEL__TELEMETRY__LOG_FORMAT=json \
-  parqtel:local
+  -p 4317:4317 \
+  -v parqtel_data:/data \
+  ghcr.io/parqtel/parqtel-oss:0.3.1
 
-docker exec parqtel curl -f http://localhost:8080/health</code></pre></div>
+docker exec parqtel healthcheck ready      # bundled probe binary (no shell in the image)
+curl -f http://localhost:8080/ready</code></pre></div>
+      <p><strong>The runtime is <code class="inline">FROM scratch</code></strong>, not distroless. The multi-stage build assembles a minimal glibc/libgcc rootfs in a dedicated <code class="inline">runtime-libs</code> stage and copies in only what the binary and a std-only probe need — ~15 MB, no shell, no package manager. That is why the healthcheck is a compiled probe binary rather than <code class="inline">curl</code>.</p>
+      <table>
+        <thead><tr><th>Property</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>User</td><td>non-root, UID/GID <code class="inline">65532</code></td></tr>
+          <tr><td>Filesystem</td><td>read-only rootfs, all capabilities dropped</td></tr>
+          <tr><td>Writable paths</td><td><code class="inline">/data</code> (mount), <code class="inline">/tmp</code></td></tr>
+          <tr><td>Data directory</td><td><code class="inline">/data</code></td></tr>
+          <tr><td>Ports</td><td><code class="inline">8080</code> HTTP, <code class="inline">4317</code> OTLP gRPC</td></tr>
+          <tr><td>Environment</td><td><code class="inline">MALLOC_ARENA_MAX=2</code> — see <a href="operations.html#sizing">sizing</a></td></tr>
+        </tbody>
+      </table>
 
-      <h2 id="brew">Homebrew (Linux &amp; macOS)</h2>
-      <p>The compiled release binary — no Docker, no Rust toolchain. Updated automatically on every release.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>brew tap parqtel/tap
-brew install parqtel-oss
-parqtel serve</code></pre></div>
-
-      <h2 id="compose">Docker Compose (full stack)</h2>
-      <p>Includes Parqtel, Grafana (auto-provisioned), Prometheus (self-monitoring), and a load generator. Network isolation splits <code class="inline">frontend</code> (user-facing) and <code class="inline">backend</code> (internal, no egress).</p>
+      <h2 id="local">Local development</h2>
+      <h3>Docker Compose</h3>
+      <p>Brings up Parqtel, Grafana (auto-provisioned), Prometheus (scraping Parqtel) and a load generator. Network isolation splits <code class="inline">frontend</code> (user-facing) from <code class="inline">backend</code> (internal).</p>
       <table>
         <thead><tr><th>Service</th><th>Port</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code class="inline">parqtel</code></td><td>9090</td><td>Main observability server</td></tr>
-          <tr><td><code class="inline">grafana</code></td><td>3000</td><td>Dashboards</td></tr>
+          <tr><td><code class="inline">parqtel</code></td><td>9090</td><td>Observability server (HTTP) + 4317 OTLP gRPC</td></tr>
+          <tr><td><code class="inline">grafana</code></td><td>3000</td><td>Dashboards, pre-provisioned with Parqtel as a datasource</td></tr>
           <tr><td><code class="inline">prometheus</code></td><td>9091</td><td>Self-monitoring scraper</td></tr>
-          <tr><td><code class="inline">load-generator</code></td><td>—</td><td>Synthetic data</td></tr>
-          <tr><td><code class="inline">mcp-*</code></td><td>3001–3007</td><td>MCP servers (opt-in)</td></tr>
+          <tr><td><code class="inline">load-generator</code></td><td>—</td><td>Synthetic ingest</td></tr>
+          <tr><td><code class="inline">mcp-*</code></td><td>3001–3007</td><td>MCP servers (commented out by default)</td></tr>
         </tbody>
       </table>
-      <div class="callout info"><div class="c-ic">ℹ</div><div><p>MCP servers are commented out by default. Add tokens to <code class="inline">.env</code> and uncomment the services (or use a gitignored <code class="inline">docker-compose.override.yml</code> for local secrets).</p></div></div>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>cp .env.example .env      # add MCP tokens if needed
-docker compose up -d
-make dev-setup            # first-time onboarding shortcut</code></pre></div>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>make dev-setup        # copies .env.example → .env, then docker compose up -d
+make local-rebuild   # REQUIRED after source changes — rebuilds images and restarts
+make local-down      # tear down</code></pre></div>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p>The Compose dev profile sets <code class="inline">wal_enabled = false</code>, so the local stack runs with the metrics and traces WALs off and no background flush worker. That is a development convenience, not a recommendation — the binary default and the chart default are both <code class="inline">true</code>.</p></div></div>
 
       <h2 id="kubernetes">Kubernetes (Helm)</h2>
-      <p>The chart at <code class="inline">charts/parqtel</code> is production-grade: HPA, PDB, NetworkPolicy, Ingress, ServiceMonitor, and PrometheusRule. Each MCP server is deployable as its own pod.</p>
       <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>helm install parqtel charts/parqtel \
   --namespace parqtel --create-namespace \
-  -f charts/parqtel/ci/full-values.yaml</code></pre></div>
-      <p>Common values:</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>replicaCount: 3
+  -f charts/parqtel/ci/full-values.yaml
+
+kubectl -n parqtel port-forward svc/parqtel 8080:8080
+curl -s localhost:8080/ready</code></pre></div>
+      <p>Chart features: HPA, PDB, NetworkPolicy, Ingress, ServiceMonitor, PrometheusRule, optional kube-prometheus-stack and cert-manager sub-charts, an optional Kubernetes custom-metrics provider, and each MCP server deployable as its own pod. The whole values file is schema-validated by <code class="inline">values.schema.json</code>, so a typo fails <code class="inline">helm lint</code> rather than silently doing nothing.</p>
+
+      <h3>Write-ahead log</h3>
+      <p>The WAL keys were never rendered by the ConfigMap template before chart 0.3.1 — you could not tune segment size or fsync interval without hand-patching a ConfigMap the next <code class="inline">helm upgrade</code> discarded. All four are now settable:</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>parqtel:
+  ingest:
+    walEnabled: true                # metrics AND traces
+    logWalEnabled: true             # logs
+    walMaxSegmentBytes: 16777216    # 16 MiB — overrides the binary's 64 MiB default
+    walSyncIntervalMs: 1000         # fsync period; lower = smaller loss window</code></pre></div>
+      <div class="callout"><div class="c-ic">ℹ</div><div><p>The chart default of <strong>16 MiB</strong> is deliberately tighter than the binary's 64 MiB: it bounds the largest single segment's replay cost and caps the file the writer must fsync, at the price of more segment churn. The chart does not render <code class="inline">wal_sync_mode</code> or <code class="inline">max_inflight_flushes</code>; use <code class="inline">extraEnv</code> for those.</p></div></div>
+
+      <h3 id="probes">Probes</h3>
+      <p><code class="inline">livenessProbe</code>, <code class="inline">readinessProbe</code> and <code class="inline">startupProbe</code> are configurable and their defaults reproduce the previous hardcoded values exactly — so upgrading changes nothing until you edit them.</p>
+      <table>
+        <thead><tr><th>Probe</th><th>Endpoint</th><th>Default</th><th>What it checks</th></tr></thead>
+        <tbody>
+          <tr><td><strong>liveness</strong></td><td><code class="inline">/health</code></td><td>delay 10 s, period 30 s, timeout 5 s, 3 failures</td><td>The process is alive. Static <code class="inline">200</code>.</td></tr>
+          <tr><td><strong>readiness</strong></td><td><code class="inline">/ready</code></td><td>delay 5 s, period 10 s, timeout 3 s, 3 failures</td><td>Storage is usable — reads block-index metadata and returns <code class="inline">503</code> on failure.</td></tr>
+          <tr><td><strong>startup</strong></td><td><code class="inline">/health</code></td><td>period 5 s, 30 failures → <strong>150 s</strong></td><td>Governs the startup window, and disables liveness until it passes.</td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>Why startup needs a budget that can move.</strong> On start Parqtel replays whatever the WAL did not flush, and that replay is proportional to unflushed WAL — so it is slow exactly when the pod is least healthy. The hardcoded budget was 150 s. An install returning with a large WAL replay exceeds it, gets killed by the liveness probe mid-replay, and restarts with an even larger replay. If that happens, raise <code class="inline">startupProbe.failureThreshold</code> (or <code class="inline">periodSeconds</code>) — <strong>do not delete the startup probe</strong>, because that hands the same work to the liveness probe, which has a much smaller budget. Each probe can be set to <code class="inline">{}</code> to disable.</p></div></div>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code># Give a recovering pod up to 10 minutes to replay its WAL.
+startupProbe:
+  httpGet: { path: /health, port: http }
+  periodSeconds: 5
+  failureThreshold: 120</code></pre></div>
+
+      <h3>Production values</h3>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>replicaCount: 1            # >1 requires shared storage (NFS/EFS) — see below
+
+image:
+  repository: ghcr.io/parqtel/parqtel-oss
+  tag: ""                    # defaults to the chart appVersion
+
 resources:
   requests: { cpu: 500m, memory: 512Mi }
-  limits:   { cpu: 2000m, memory: 2Gi }
-persistence: { enabled: true, size: 50Gi, storageClass: gp3 }
+  limits:   { cpu: "2",   memory: 2Gi }
+
+persistence:
+  enabled: true
+  size: 50Gi
+  storageClassName: gp3
+  accessMode: ReadWriteOnce
+
+extraEnv:
+  - name: MALLOC_TRIM_THRESHOLD_
+    value: "134217728"      # 128 MiB — see the sizing page
+
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
+
 networkPolicy: { enabled: true }
+
 mcp:
-  slack: { enabled: true, env: { SLACK_BOT_TOKEN: "xoxb-..." } }</code></pre></div>
-      <p>CI value overlays ship for <code class="inline">minimal</code>, <code class="inline">default</code>, and <code class="inline">full</code> installs and pass <code class="inline">helm lint</code> with the bundled <code class="inline">values.schema.json</code>. Local k3d workflows are wired through <code class="inline">make local-k3d-up</code>.</p>
+  parqtel:
+    enabled: true
+    env:
+      PARQTEL_API_URL: "http://parqtel:8080"</code></pre></div>
+      <div class="callout warn"><div class="c-ic">⚠</div><div><p><strong>Replicas &gt; 1 need shared storage.</strong> Each replica owns its own blocks, its own <code class="inline">index.json</code> and its own WAL. With <code class="inline">ReadWriteOnce</code> and one replica per node you get N independent stores — correct, but queries and the built-in console only see the pod you reach. Use a shared RWX volume, or route queries to a specific replica.</p></div></div>
+      <p class="muted">Overlays ship for <code class="inline">minimal</code>, <code class="inline">default</code>, <code class="inline">dev</code>, <code class="inline">production</code>, <code class="inline">ci</code>, <code class="inline">orbstack</code> and <code class="inline">load-test</code>. A 4&nbsp;GiB constrained profile is at <code class="inline">deploy/k3d-values-4gb.yaml</code>; local k3d workflows run through <code class="inline">make local-k3d-up</code>.</p>
+
+      <h2 id="rollouts">Argo Rollouts</h2>
+      <p>Parqtel is a drop-in <strong>metrics backend</strong> for <a href="https://argo-rollouts.readthedocs.io/">Argo Rollouts</a>. Because it exposes a Prometheus-compatible query API, the stock Argo Rollouts <strong>Prometheus provider</strong> queries Parqtel with <strong>no custom code</strong> — you only point the provider's <code class="inline">address</code> at Parqtel.</p>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: parqtel-red
+spec:
+  args:
+  - name: service            # OTel service.name under test
+  metrics:
+  - name: error-rate
+    initialDelay: 1m         # let RED metrics accumulate before the first check
+    interval: 30s
+    count: 10                # ~5 minutes of sampling
+    failureLimit: 1
+    successCondition: "result[0] &lt; 0.01"
+    failureCondition: "result[0] &gt; 0.05"
+    provider:
+      prometheus:
+        address: http://parqtel.parqtel.svc.cluster.local:8080
+        query: |
+          sum(sum_over_time(traces_service_errors_total{service.name="{{args.service}}"}[5m]))
+          /
+          sum(sum_over_time(traces_service_requests_total{service.name="{{args.service}}"}[5m]))</code></pre></div>
+      <div class="callout info"><div class="c-ic">↗</div><div><p><strong>Zero-config RED.</strong> If your app exports OTel <em>traces</em>, Parqtel auto-derives <code class="inline">traces_service_{requests,errors,duration_ms}_total</code> per <code class="inline">service.name</code> and operation from <strong>server</strong> spans — no hand-written instrumentation or recording rules.</p></div></div>
+      <p>To gate on <strong>only the canary</strong>, make the canary revision export a distinguishing label — set the OTel <code class="inline">service.name</code> to include the revision, or filter on a <code class="inline">revision</code> resource attribute. Argo Rollouts can pass the pod hash via <code class="inline">valueFrom.podTemplateHashValue</code>.</p>
+      <p>Two limitations to plan around: the Prometheus provider gates on <strong>metrics only</strong> — Parqtel's log and trace search and cross-signal pipelines are not reachable through it. And <code class="inline">/api/v1/query</code> looks back 5 minutes, so use <code class="inline">initialDelay</code> or <code class="inline">provider.prometheus.rangeQuery</code> for an explicit window. If a query returns no series, <code class="inline">result[0]</code> is undefined and the measurement errors.</p>
+      <p>Examples: <a href="https://github.com/parqtel/parqtel-oss/tree/main/examples/argo-rollouts"><code class="inline">examples/argo-rollouts/</code></a>. Full guide: <a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/ARGO_ROLLOUTS.md"><code class="inline">docs/ARGO_ROLLOUTS.md</code></a>.</p>
 
       <h2 id="systemd">systemd (bare metal)</h2>
-      <p>For a plain Linux host, install the release binary and the unit file at <code class="inline">deploy/systemd/parqtel.service</code>.</p>
-      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>sudo cp target/release/parqtel /usr/local/bin/
-sudo useradd -r -s /bin/false parqtel
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>sudo useradd -r -s /bin/false parqtel
 sudo mkdir -p /var/lib/parqtel/{data,logs} /etc/parqtel
 sudo chown -R parqtel:parqtel /var/lib/parqtel
-sudo cp config/default.toml /etc/parqtel/parqtel.toml
-sudo cp deploy/systemd/parqtel.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now parqtel</code></pre></div>
+
+sudo install -m 0755 target/release/parqtel /usr/local/bin/parqtel
+sudo install -m 0644 config/default.toml /etc/parqtel/parqtel.toml
+sudo install -m 0644 deploy/systemd/parqtel.service /etc/systemd/system/
+
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now parqtel
+journalctl -u parqtel -f | grep -E 'WAL replay|reconciled|listening'</code></pre></div>
 
       <h2 id="production">Production recommendations</h2>
       <div class="grid grid-2">
-        <div class="card"><h3>Storage</h3><p>Prefer SSDs (Parquet loves fast sequential reads). Size for <code class="inline">(ingest_rate × retention_days) / compression_ratio</code> — typically 10–20× with Zstd.</p></div>
-        <div class="card"><h3>Memory</h3><p>The block index is held in memory and scales with block count. 512&nbsp;MB minimum; 2&nbsp;GB for high-cardinality workloads.</p></div>
-        <div class="card"><h3>Networking</h3><p>Terminate TLS at a reverse proxy (nginx/envoy). Use <code class="inline">/health</code> for load-balancer probes and match <code class="inline">max_body_size</code> to your proxy.</p></div>
-        <div class="card"><h3>Monitoring</h3><p>Scrape <code class="inline">/metrics</code>. Watch <code class="inline">parqtel_ingest_total</code>, <code class="inline">parqtel_query_duration_seconds</code>, <code class="inline">parqtel_blocks_total</code>, <code class="inline">parqtel_compaction_duration_seconds</code>.</p></div>
-        <div class="card"><h3>Backup</h3><p>Blocks are immutable once written — safe to copy live. Back up <code class="inline">index.bin</code> for fast recovery; otherwise it rebuilds from Parquet.</p></div>
-        <div class="card"><h3>Supply chain</h3><p>Images are Trivy-scanned, cosign-signed, and tracked by OpenSSF Scorecard. Pull from GHCR with signature verification.</p></div>
+        <div class="card"><h3>Storage</h3><p>Prefer SSDs — Parquet rewards fast sequential reads. Budget <code class="inline">(rate × retention_days) / 20</code> for zstd at default level, and add the block index: measured at 23 % of data volume, growing ~0.3 GB/day and <em>not</em> bounded by retention.</p></div>
+        <div class="card"><h3>Memory</h3><p>Size from the <a href="operations.html#sizing">formula</a>, not a default — memory scales with <em>buffered points</em>, and the buffer is unbounded. Set <code class="inline">MALLOC_ARENA_MAX=2</code> and <code class="inline">MALLOC_TRIM_THRESHOLD_=134217728</code> or RSS will ratchet to the high-water mark and never return.</p></div>
+        <div class="card"><h3>Probes</h3><p>Use <code class="inline">/ready</code> for readiness and load-balancer health checks — <code class="inline">/health</code> is static and will happily mark a pod ready while its storage is failing.</p></div>
+        <div class="card"><h3>Networking</h3><p><strong>There is no authentication.</strong> Terminate TLS and authenticate at a reverse proxy or service mesh before exposing <code class="inline">8080</code> or <code class="inline">4317</code>. Match the proxy body limit to <code class="inline">ingest.max_body_size</code>.</p></div>
+        <div class="card"><h3>Monitoring</h3><p>Scrape <code class="inline">/metrics</code>. Watch <code class="inline">parqtel_process_rss_bytes</code>, <code class="inline">parqtel_buffer_points</code>, <code class="inline">parqtel_flush_duration_seconds</code>, <code class="inline">parqtel_index_sidecar_bytes</code>, <code class="inline">parqtel_ingest_lock_wait_seconds</code>.</p></div>
+        <div class="card"><h3>Backup</h3><p>Blocks are immutable, so a live copy is safe. Back up <code class="inline">index.json</code> for fast startup — but a lost or stale sidecar repairs itself at startup by reconciliation, so it is an optimisation, not a requirement.</p></div>
+        <div class="card"><h3>Profiling</h3><p><code class="inline">/debug/pprof/*</code> is off by default and 404s until enabled. Turn it on temporarily and restrict it with a NetworkPolicy.</p></div>
+        <div class="card"><h3>Supply chain</h3><p>Images are multi-arch, cosign-signed, SBOM- and provenance-attested, Trivy-scanned (report-only) and CodeQL-analyzed in CI. Verify signatures on pull from GHCR.</p></div>
       </div>
+
+      <h2 id="verify">Post-deploy verification</h2>
+      <div class="codeblock"><button class="copy-btn">Copy</button><pre><code>curl -sf localhost:8080/health              # {"status":"ok"}
+curl -sf localhost:8080/ready               # {"status":"ready"}  |  503 if storage is broken
+curl -s  localhost:8080/api/v1/stats | jq   # blocks, rows, disk bytes, index size per signal
+curl -s  localhost:8080/metrics | grep -E 'wal|flush|index_sidecar|buffer_points'
+kubectl -n parqtel logs deploy/parqtel | grep -E 'WAL replay|reconciled|listening'</code></pre></div>
+
+      <div class="callout"><div class="c-ic">↗</div><div><p>Related: <a href="configuration.html">Configuration reference</a> · <a href="operations.html#sizing">Memory sizing</a> · <a href="operations.html#known-issues">Known issues</a></p></div></div>
     </main>
   </div>
 
@@ -138,11 +237,11 @@ sudo systemctl daemon-reload && sudo systemctl enable --now parqtel</code></pre>
     <div class="container">
       <div class="footer-grid">
         <div><a class="brand" href="../index.html"><img class="logo" src="../assets/img/logo.svg" alt="Parqtel"> Parqtel</a><p class="blurb" style="margin-top:10px">Ultra-lightweight SRE observability engine — streaming OTel signals into compressed Parquet.</p></div>
-        <div><h5>Documentation</h5><a href="getting-started.html">Get Started</a><a href="architecture.html">Architecture</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="api.html">API Reference</a><a href="query-functions.html">Query Functions</a><a href="screenshots.html">UI Screenshots</a><a href="api-explorer.html">API Explorer</a></div>
-        <div><h5>Integrations</h5><a href="mcp.html">MCP Servers</a><a href="faq.html">FAQ</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/TROUBLESHOOTING.md">Troubleshooting</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/docs/benchmarks/PERFORMANCE.md">Benchmarks</a></div>
-        <div><h5>Project</h5><a href="https://github.com/parqtel/parqtel-oss">GitHub</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a><a href="https://github.com/parqtel/parqtel-oss/security">Security</a><a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></div>
+        <div><h5>Learn</h5><a href="architecture.html">Architecture</a><a href="storage.html">Storage engine</a><a href="durability.html">Durability &amp; recovery</a><a href="performance.html">Performance</a></div>
+        <div><h5>Operate</h5><a href="getting-started.html">Getting started</a><a href="deployment.html">Deployment</a><a href="configuration.html">Configuration</a><a href="operations.html">Known issues</a><a href="release-notes.html">Release notes</a></div>
+        <div><h5>Reference</h5><a href="api.html">API reference</a><a href="query-functions.html">Query functions</a><a href="mcp.html">MCP servers</a><a href="faq.html">FAQ</a><a href="screenshots.html">UI screenshots</a><a href="api-explorer.html">API explorer</a></div>
       </div>
-      <div class="footer-bottom"><span>© 2025 Parqtel. Apache-2.0 licensed.</span><span>Built with Rust · Axum · Apache Parquet</span></div>
+      <div class="footer-bottom"><span>© 2026 Parqtel · Apache-2.0 · <a href="https://github.com/parqtel/parqtel-oss">GitHub</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/LICENSE">License</a> · <a href="https://github.com/parqtel/parqtel-oss/security">Security</a> · <a href="https://github.com/parqtel/parqtel-oss/blob/main/CONTRIBUTING.md">Contributing</a></span><span>Docs track <a href="release-notes.html">v0.3.1</a> · Built with Rust · Axum · Apache Parquet</span></div>
     </div>
   </footer>
   <script src="../assets/js/site.js"></script>
