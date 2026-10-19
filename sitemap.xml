@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://parqtel.github.io/</loc></url>
+  <url><loc>https://parqtel.github.io/docs/overview.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/getting-started.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/use-cases.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/architecture.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/storage.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/durability.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/performance.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/ingest.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/deployment.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/visualize.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/alerting.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/backup-upgrade.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/troubleshooting.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/configuration.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/api.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/query-functions.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/cli.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/mcp.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/release-notes.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/faq.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/internals.html</loc></url>
+  <url><loc>https://parqtel.github.io/docs/api-explorer.html</loc></url>
+</urlset>

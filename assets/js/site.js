@@ -17,6 +17,8 @@
     var btn = document.querySelector("[data-theme-toggle]");
     if (btn) btn.setAttribute("aria-label", t === "dark" ? "Switch to light mode" : "Switch to dark mode");
   }
+  var initialBtn = document.querySelector("[data-theme-toggle]");
+  if (initialBtn) initialBtn.setAttribute("aria-label", stored === "dark" ? "Switch to light mode" : "Switch to dark mode");
   document.addEventListener("click", function (e) {
     var t = e.target.closest("[data-theme-toggle]");
     if (t) setTheme(root.getAttribute("data-theme") === "dark" ? "light" : "dark");
@@ -27,7 +29,10 @@
     var t = e.target.closest(".nav-toggle");
     if (t) {
       var links = document.getElementById("navLinks");
-      if (links) links.classList.toggle("open");
+      if (links) {
+        var open = links.classList.toggle("open");
+        t.setAttribute("aria-expanded", open ? "true" : "false");
+      }
     }
   });
 
@@ -54,7 +59,11 @@
     var id = location.pathname.split("/").pop() || "index.html";
     links.forEach(function (a) {
       var href = a.getAttribute("href");
-      if (href && href.indexOf(id) !== -1 && href.indexOf("#") === -1) a.classList.add("active");
+      a.removeAttribute("aria-current");
+      if (href && href.indexOf(id) !== -1 && href.indexOf("#") === -1) {
+        a.classList.add("active");
+        a.setAttribute("aria-current", "page");
+      }
     });
     // In-page anchor highlight
     var headings = Array.prototype.slice.call(document.querySelectorAll("h2[id], h3[id]"));
